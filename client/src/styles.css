@@ -1,0 +1,254 @@
+/* ===========================================================================
+   localCRM — app-specific tweaks on top of the NetSimple/Bootstrap theme
+   =========================================================================== */
+
+/* Brand orange accent on top of default theme */
+:root {
+  --brand:          #F05523;
+  --brand-dark:     #C03D15;
+  --brand-mint:     #FFF0E8;
+  --teal:           #0E9488;
+  --border-warm:    #F0C8B0;
+  --secondary:      #1A1A1A;
+  --secondary-dark: #000000;
+}
+
+/* Buttons + icons pull from the business's secondary color; everything else
+   (links, text-primary, subtle backgrounds) stays on the primary color. */
+.btn-primary {
+  background-color: var(--secondary) !important;
+  border-color: var(--secondary) !important;
+}
+.btn-primary:hover { background-color: var(--secondary-dark) !important; border-color: var(--secondary-dark) !important; }
+.bg-primary { background-color: var(--brand) !important; }
+.text-primary { color: var(--brand) !important; }
+.bg-primary-subtle { background-color: var(--brand-mint) !important; }
+.text-primary-emphasis { color: var(--brand-dark) !important; }
+
+.page-wrapper { min-height: 100vh; }
+
+/* ---------- Kanban board ---------- */
+.kanban-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 1fr);
+  gap: 14px;
+  overflow-x: auto;
+  padding: 8px 0 16px;
+}
+/* On narrow phones, 280px columns showed only a sliver of the next stage
+   with no hint you could swipe — size each column to most of the viewport
+   (with a visible peek of the next one) and snap between them. */
+@media (max-width: 480px) {
+  .kanban-board { grid-auto-columns: minmax(82vw, 1fr); scroll-snap-type: x mandatory; }
+  .kanban-column { scroll-snap-align: start; }
+}
+.kanban-col {
+  background: #FFF8F5;
+  border: 1px solid var(--border-warm);
+  border-radius: 12px;
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+}
+.kanban-col-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-warm);
+  background: white;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  position: sticky; top: 0; z-index: 1;
+}
+.kanban-col-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; }
+.kanban-card {
+  background: white;
+  border: 1px solid var(--border-warm);
+  border-radius: 10px;
+  padding: 12px;
+  cursor: grab;
+  transition: box-shadow .15s, transform .1s;
+}
+.kanban-card:hover { box-shadow: 0 4px 16px rgba(240, 85, 35, 0.12); transform: translateY(-1px); }
+.kanban-card.drag-over { outline: 2px dashed var(--brand); }
+.kanban-col.drag-target { background: var(--brand-mint); }
+.kanban-amount { font-weight: 700; color: var(--brand-dark); }
+
+/* ---------- Tag chips ---------- */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+}
+
+/* ---------- Small helpers ---------- */
+.avatar-initials {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--brand-mint);
+  color: var(--brand-dark);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+.pointer { cursor: pointer; }
+.empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: #6C757D;
+  background: #FFF8F5;
+  border: 1px dashed var(--border-warm);
+  border-radius: 12px;
+}
+
+/* Softer, clickable table rows */
+.table-hover tbody tr { cursor: pointer; }
+
+/* Fallback if vendor styles.css missing */
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #FFF5EE; }
+
+/* ── Dark mode overrides ──────────────────────────────────────────────────── */
+[data-bs-theme=dark] {
+  --brand-mint:  rgba(var(--bs-primary-rgb), 0.15);
+  --border-warm: rgba(var(--bs-primary-rgb), 0.2);
+}
+
+[data-bs-theme=dark] body {
+  background: #0f172a;
+}
+
+[data-bs-theme=dark] .kanban-col {
+  background: #1e293b;
+  border-color: var(--border-warm);
+}
+
+[data-bs-theme=dark] .kanban-col-header {
+  background: #1e293b;
+}
+
+[data-bs-theme=dark] .kanban-card {
+  background: #0f172a;
+  border-color: var(--border-warm);
+}
+
+[data-bs-theme=dark] .empty-state {
+  background: #1e293b;
+  border-color: var(--border-warm);
+  color: #94a3b8;
+}
+
+[data-bs-theme=dark] .topbar {
+  background: #1e293b !important;
+}
+
+[data-bs-theme=dark] .page-wrapper,
+[data-bs-theme=dark] .body-wrapper {
+  background: #0f172a;
+}
+
+[data-bs-theme=dark] .bg-white {
+  background-color: #1e293b !important;
+}
+
+[data-bs-theme=dark] .table-hover tbody tr:hover {
+  --bs-table-hover-bg: rgba(var(--bs-primary-rgb), 0.08);
+}
+
+/* ── Mobile topbar logo ───────────────────────────────────────────────────── */
+@media (max-width: 991.98px) {
+  .topbar .navbar .nav-item img {
+    height: 36px !important;
+  }
+}
+
+/* ── Mobile sidebar ───────────────────────────────────────────────────────── */
+@media (max-width: 991.98px) {
+  /* Hide the fixed sidebar by default; slide in when .sidebar-open is on #main-wrapper */
+  .left-sidebar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 1050;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    width: 260px !important;
+    overflow-y: auto;
+  }
+  #main-wrapper.sidebar-open .left-sidebar {
+    transform: translateX(0);
+  }
+
+  /* Backdrop */
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1049;
+  }
+  #main-wrapper.sidebar-open .sidebar-backdrop {
+    display: block;
+  }
+
+  /* Push page content to full width on mobile */
+  .page-wrapper {
+    margin-left: 0 !important;
+  }
+
+  /* Give topbar room for the hamburger */
+  .topbar .navbar {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  /* Ensure main content has reasonable padding */
+  main {
+    padding: 16px 4px !important;
+  }
+
+  /* Table horizontal scroll on small screens */
+  .table-responsive { -webkit-overflow-scrolling: touch; }
+
+  /* Cards stack properly */
+  .row.g-4 > [class*="col-lg"] { margin-bottom: 1rem; }
+}
+
+/* ── Portal nav mobile ────────────────────────────────────────────────────── */
+.portal-nav-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE 10+ */
+  flex-wrap: nowrap !important;
+}
+.portal-nav-scroll::-webkit-scrollbar { display: none; }
+.portal-nav-scroll .nav-item { flex-shrink: 0; }
+
+/* ── Top-bar module/section switcher — scrolls instead of wrapping so adding
+   more modules later never breaks the layout (desktop; mobile uses its own
+   copy inside the sidebar drawer, styled the same way). ─────────────────── */
+.module-switcher-scroll {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE 10+ */
+}
+.module-switcher-scroll::-webkit-scrollbar { display: none; }
+
+@media (max-width: 575.98px) {
+  /* Tighten portal nav labels on very small phones */
+  .portal-nav-scroll .nav-link span { font-size: 0.8rem; }
+  .portal-nav-scroll .nav-link { padding-left: 0.6rem; padding-right: 0.6rem; }
+
+  /* Stack portal header on tiny screens */
+  .portal-header-row {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.5rem !important;
+  }
+  .portal-header-actions { align-self: flex-end; }
+}

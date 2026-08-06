@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr"
+  data-bs-theme="light"
+  data-color-theme="Blue_Theme"
+  data-boxed-layout="full"
+  data-layout="vertical">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ventura County Sheriff's Foundation</title>
+    <link rel="icon" href="/vcsf/favicon-star-32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/vcsf/favicon-star-512.png" sizes="512x512" type="image/png" />
+    <link rel="apple-touch-icon" href="/vcsf/favicon-star-180.png" />
+
+    <!-- NetSimple / Bootstrap admin theme is intentionally NOT loaded here —
+         loading it unconditionally for every route (including the public
+         site and the Puck builder canvas) is what caused the admin theme's
+         CSS to bleed into and override the public site's own styling. It's
+         loaded on-demand instead, only for admin/portal surfaces, via
+         src/hooks/useAdminTheme.js. -->
+    <!-- Iconify (Solar icon pack, etc.) -->
+    <script src="https://cdn.jsdelivr.net/npm/iconify-icon@1.0.8/dist/iconify-icon.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

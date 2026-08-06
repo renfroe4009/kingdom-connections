@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pay Invoice</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: transparent;
+      padding: 8px;
+    }
+    /* Passage.js V2 looks for #valor-fields by default (formFieldId config). */
+    #valor-fields { width: 100%; min-height: 280px; }
+    #status {
+      display: none;
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-top: 8px;
+    }
+    #status.success { background: #d1fae5; color: #065f46; display: block; }
+    #status.error   { background: #fee2e2; color: #991b1b; display: block; }
+    #status.loading { background: #eff6ff; color: #1e40af; display: block; }
+  </style>
+</head>
+<body>
+  <!--
+    Passage.js V2 requires three config params: clientToken, epi, formAction.
+    It defaults to mounting into #valor-fields (formFieldId default).
+    formAction is required by validateRequiredConfig() but we intercept the
+    tokenReceived event before the form ever POSTs anywhere.
+  -->
+  <div id="valor-fields"></div>
+  <div id="status"></div>
+
+  <script>
+    (function () {
+      var params     = new URLSearchParams(window.location.search);
+      var token      = params.get('clientToken');
+      var epi        = params.get('epi');
+      var mode       = params.get('mode') || 'sandbox';
+      // Full, absolute URL the caller wants the ACH sub-form's raw browser POST
+      // to land on (e.g. .../api/payments/public/ach-charge/28 for an invoice,
+      // or .../api/checkout/public/ach-complete/17 for a cart-checkout intent)
+      // — url-encoded since it's itself a full URL with its own query string
+      // potential. Falls back to the no-op stub when ACH isn't wired up for
+      // whatever's embedding this iframe.
+      var achFormAction = params.get('achFormAction') || '';
+      var enableACH  = params.get('enableACH') === '1';
+      // On a split client/API deployment (Vercel + Railway), this iframe's
+      // own origin is the CLIENT's domain, which has no /api routes — the
+      // parent page passes the real API origin explicitly. Falls back to
+      // same-origin for local dev / single-origin deployments.
+      var apiOrigin  = params.get('apiOrigin') || window.location.origin;
+
+      var statusEl = document.getElementById('status');
+
+      function setStatus(type, msg) {
+        statusEl.className = type;
+        statusEl.textContent = msg;
+      }
+
+      // Use the explicit client origin instead of '*' so the postMessage is
+      // not broadcast to every frame — only the same-origin parent receives it.
+      var _allowedOrigin = window.location.origin;
+      function postToParent(payload) {
+        var target = window.parent !== window ? window.parent : window.opener;
+        if (target) target.postMessage(payload, _allowedOrigin);
+      }
+
+      if (!token || !epi) {
+        setStatus('error', 'Missing clientToken or epi — cannot load payment form.');
+        postToParent({ type: 'PASSAGE_ERROR', error: 'Missing clientToken or epi' });
+        return;
+      }
+
+      var script = document.createElement('script');
+      script.src = 'https://js.valorpaytech.com/V2/js/Passage.min.js';
+
+      script.onerror = function () {
+        setStatus('error', 'Could not load Passage.js. Check your network connection.');
+        postToParent({ type: 'PASSAGE_ERROR', error: 'Passage.js failed to load' });
+      };
+
+      // Tell the parent iframe how tall we actually are so it can resize.
+      function reportHeight() {
+        var h = document.documentElement.scrollHeight || document.body.scrollHeight;
+        postToParent({ type: 'PASSAGE_HEIGHT', height: h });
+      }
+
+      script.onload = function () {
+        if (typeof PassageJS === 'undefined') {
+          setStatus('error', 'Passage.js loaded but PassageJS constructor not found.');
+          postToParent({ type: 'PASSAGE_ERROR', error: 'PassageJS constructor undefined' });
+          return;
+        }
+
+        try {
+          var passage = new PassageJS({
+            clientToken:   token,
+            epi:           epi,
+            variant:       'inline',
+            formFieldId:   'valor-fields',
+            // formAction is required by validateRequiredConfig() — without it
+            // the form never renders. Card never hits it: we intercept
+            // tokenReceived before any POST. ACH DOES really POST here (a
+            // real, uncontrollable browser form submission — see the
+            // tokenReceived-vs-formSubmitting comments below), which is why
+            // achFormAction must point at a real endpoint whenever ACH is on.
+            formAction:    achFormAction ? decodeURIComponent(achFormAction) : (apiOrigin + '/passage-noop'),
+            submitText:    'Pay Now',
+            // isDemo=true tells Passage.js to use securelink-staging.valorpaytech.com
+            // instead of the production securelink.valorpaytech.com endpoint.
+            isDemo:        (mode === 'sandbox' || mode === 'demo'),
+            // Only offer the ACH tab when the caller explicitly says this flow
+            // supports it (an achFormAction endpoint actually exists), gated by
+            // the admin ach_enabled setting — see client/public/passage-save-card.html
+            // for why this defaults off everywhere else (recurring/vaulting
+            // flows have no ACH backend yet).
+            enableACH:     enableACH,
+          });
+
+          // ── Event: card tokenized ─────────────────────────────────────────
+          passage.on('tokenReceived', function (data) {
+            setStatus('loading', 'Processing payment…');
+
+            // Safely read last4 and expiry from form fields — not sensitive PCI data.
+            var numEl  = document.getElementById('cc-number');
+            var expEl  = document.getElementById('cc-expiry');
+            var nameEl = document.getElementById('cc-name');
+
+            var rawNum = numEl  ? numEl.value.replace(/\D/g, '')  : '';
+            var last4  = rawNum.length >= 4 ? rawNum.slice(-4) : '';
+            var expiry = expEl  ? expEl.value.trim()              : '';
+            var holder = nameEl ? nameEl.value.trim()             : '';
+
+            function detectBrand(n) {
+              if (!n) return '';
+              if (/^4/.test(n))              return 'Visa';
+              if (/^5[1-5]/.test(n))         return 'Mastercard';
+              if (/^2[2-7]/.test(n))         return 'Mastercard';
+              if (/^3[47]/.test(n))          return 'Amex';
+              if (/^6(?:011|5)/.test(n))     return 'Discover';
+              if (/^35/.test(n))             return 'JCB';
+              return '';
+            }
+            var card_brand = detectBrand(rawNum);
+
+            postToParent({
+              type:            'PASSAGE_TOKEN',
+              card_token:      data.card_token  || data.cardToken || data.token,
+              payment_method:  data.paymentMethod || 'card',
+              cardholder_name: holder,
+              last4:           last4,
+              card_brand:      card_brand,
+              expiry:          expiry,
+            });
+          });
+
+          // ── Event: ACH form submitting ────────────────────────────────────
+          // Fires just before the hidden form POSTs to our ach-charge endpoint.
+          // Show a processing message so the iframe isn't just blank.
+          passage.on('formSubmitting', function () {
+            setStatus('loading', 'Processing ACH payment…');
+            postToParent({ type: 'PASSAGE_ACH_SUBMITTING' });
+          });
+
+          // ── Event: session expired ────────────────────────────────────────
+          passage.on('sessionExpired', function () {
+            setStatus('error', 'Session expired. Please close and try again.');
+            postToParent({ type: 'PASSAGE_ERROR', error: 'Session expired' });
+          });
+
+          // ── Event: error ──────────────────────────────────────────────────
+          passage.on('error', function (err) {
+            var msg = typeof err === 'string' ? err
+                    : (err && err.message) ? err.message
+                    : (err && err.error)   ? err.error
+                    : 'Payment form error';
+            setStatus('error', 'Error: ' + msg);
+            postToParent({ type: 'PASSAGE_ERROR', error: msg });
+          });
+
+          // ── Event: success ────────────────────────────────────────────────
+          passage.on('success', function (data) {
+            setStatus('success', 'Payment submitted.');
+            postToParent({ type: 'PASSAGE_SUCCESS', data: data });
+          });
+
+          // Report height once after Passage.js has had time to inject its DOM.
+          setTimeout(reportHeight, 600);
+          setTimeout(reportHeight, 1500);
+
+        } catch (initErr) {
+          setStatus('error', 'Failed to initialize Passage.js: ' + initErr.message);
+          postToParent({ type: 'PASSAGE_ERROR', error: initErr.message });
+        }
+      };
+
+      document.head.appendChild(script);
+    })();
+  </script>
+</body>
+</html>

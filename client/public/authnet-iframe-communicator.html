@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Authorize.Net IFrame Communicator</title>
+  <!--
+    Auth.net Accept Hosted IFrame Communicator
+    -----------------------------------------
+    Auth.net's hosted form lives inside an iframe on our /pay/:id page. When
+    the customer completes the payment, Auth.net's JS posts a message into a
+    HIDDEN child iframe that Auth.net itself spawns, pointing at THIS file.
+    Same-origin policy then lets THIS page bubble the message up to the
+    grandparent (the React PayInvoice page) via window.parent.parent.postMessage.
+
+    Without this file, Auth.net's iframe has nowhere to deliver the response
+    in environments where the IPN/webhook can't reach the server (e.g. localhost
+    dev). The React listener on the parent page reads the bubbled message and
+    captures the real transId / cardBrand / last4 / authCode.
+
+    DO NOT modify the structure casually — Auth.net delivers the payload via
+    window.location.hash on initial load (?... fragment) AND via postMessage,
+    depending on browser and integration version. We handle both.
+  -->
+  <script>
+    (function () {
+      function bubble(str) {
+        if (!str || !str.length) return;
+        if (window.parent && window.parent.parent && window.parent.parent.postMessage) {
+          window.parent.parent.postMessage(str, '*');
+        } else if (window.parent && window.parent.postMessage) {
+          window.parent.postMessage(str, '*');
+        }
+      }
+
+      // 1) Auth.net sends payload via URL hash on initial load.
+      if (window.location.hash && window.location.hash.length > 1) {
+        bubble(window.location.hash.substring(1));
+      }
+      if (window.location.search && window.location.search.length > 1) {
+        bubble(window.location.search.substring(1));
+      }
+
+      // 2) Some Auth.net configurations also relay via postMessage.
+      function onMessage(e) {
+        if (!e || !e.data) return;
+        bubble(typeof e.data === 'string' ? e.data : JSON.stringify(e.data));
+      }
+      if (window.addEventListener) {
+        window.addEventListener('message', onMessage, false);
+      } else if (window.attachEvent) {
+        window.attachEvent('onmessage', onMessage);
+      }
+    })();
+  </script>
+</head>
+<body></body>
+</html>
