@@ -11,24 +11,60 @@ and Vercel projects once, then these are the commands to ship it.
 
 ## 1. Railway (API + database)
 
-Create a Railway project with a MySQL database at railway.app first, then from this
-repo's `server` folder:
+Create a Railway project with a MySQL database at railway.app first. There are two
+ways to get the `server/` code onto the API service — pick one:
+
+**Option A — CLI deploy** (uploads `server/` directly; no repo connection needed):
 
 ```
 cd server
 railway login
 railway link                       # pick the Railway project you created
-railway variables set \
-  DB_HOST='${{MySQL.MYSQLHOST}}' DB_PORT='${{MySQL.MYSQLPORT}}' \
-  DB_USER='${{MySQL.MYSQLUSER}}' DB_PASSWORD='${{MySQL.MYSQLPASSWORD}}' \
-  DB_NAME='${{MySQL.MYSQLDATABASE}}' \
-  JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))") \
-  JWT_EXPIRES_IN=8h STORAGE_DRIVER=local NODE_ENV=production
 railway up
 ```
 
-Seed the Railway database with this project's schema/data: dump it locally with
-`mysqldump -u root -p kingdom_connections > dump.sql`, then `railway connect MySQL --ssh < dump.sql`.
+**Option B — GitHub-connected** (auto-deploys on every push): if you instead connect
+the API service to this repo on GitHub, Railway builds from the **repo root**, which
+contains both `client/` and `server/` — Railpack can't detect a buildable app there and
+the build fails with "could not determine how to build the app". You must set the
+service's **Root Directory to `server`** (Settings → Source → Root Directory) before
+it will build.
+
+Either way, set these variables on the API service (`railway variables set ...` or the
+dashboard Variables tab):
+
+```
+DB_HOST='${{MySQL.MYSQLHOST}}' DB_PORT='${{MySQL.MYSQLPORT}}'
+DB_USER='${{MySQL.MYSQLUSER}}' DB_PASSWORD='${{MySQL.MYSQLPASSWORD}}'
+DB_NAME='${{MySQL.MYSQLDATABASE}}'
+JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+JWT_EXPIRES_IN=8h STORAGE_DRIVER=local NODE_ENV=production
+CLIENT_ORIGIN=<your Vercel URL from step 2>   # required for CORS — the API and
+                                               # client are on different origins
+```
+
+The API needs a public domain to be reachable — generate one under Settings → Networking
+→ Generate Domain if it doesn't already have one. That URL is what you'll use for
+`VITE_API_URL` in step 2 and what shows up in `railway status`.
+
+Seed the Railway database with this project's schema/data: dump it locally (adjust
+user/host/port to match your local `.env`) —
+
+```
+mysqldump -h 127.0.0.1 -P 3306 -u <DB_USER> -p --routines --triggers --single-transaction \
+  kingdom_connections > dump.sql
+```
+
+— then import it over an SSH tunnel (works even with no public proxy on the DB):
+
+```
+railway link -s MySQL   # link to the MySQL service specifically
+railway connect MySQL --ssh < dump.sql
+```
+
+A `mysqldump: ... PROCESS privilege(s) ... trying to dump tablespaces` warning on the
+dump step is expected for a non-root local user and can be ignored — the dump still
+completes.
 
 ## 2. Vercel (client)
 
