@@ -12,7 +12,7 @@ import { useTheme } from '../../theme/ThemeContext.jsx';
 // currently a no-op since the wordmark and tagline live inside the logo image.
 // =============================================================================
 const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-const FALLBACK_LOGO = '/vcsf/logo-header.png';
+const FALLBACK_LOGO = '/kingdom-connections/logo.png';
 
 // Media-library URLs come back as relative /api/... paths in local dev (same
 // origin) but need the API origin prefixed in a split Vercel/Railway deploy.
@@ -42,7 +42,7 @@ export default function BrandMark({ size = 'md', linkHome = false }) {
   const inner = (
     <img
       src={src}
-      alt="Ventura County Sheriff's Foundation"
+      alt="Kingdom Connections"
       style={{
         height: h,
         width: 'auto',
