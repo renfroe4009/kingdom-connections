@@ -32,12 +32,12 @@ function fmtAuthnetDate(d) {
   return new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
-function fmtValorDate(d) {
-  // Valor's history endpoints generally accept "YYYY-MM-DD HH:MM:SS"
+function fmtValorDateOnly(d) {
+  // Both /?txnlist and /?achtxnfetch take plain YYYY-MM-DD (no time component) —
+  // confirmed against Valor's live sandbox (see gateways.js-adjacent notes below).
   const dt = new Date(d);
   const pad = (n) => String(n).padStart(2, '0');
-  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())} ` +
-         `${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}:${pad(dt.getUTCSeconds())}`;
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
 }
 
 async function loadActiveGateways() {
@@ -108,11 +108,18 @@ async function applySettledTxn({ runId, gateway, txn }) {
 
   if (!row) return { matched: false, reason: 'no local payment' };
 
-  // Don't downgrade — once captured, we only enrich.
+  // Don't downgrade — once captured, we only enrich — EXCEPT a captured payment
+  // can still move to failed/refunded/voided if the gateway later reports a
+  // genuine reversal (txn.isReversal). This matters specifically for ACH: unlike
+  // cards (which decline instantly, before ever reaching 'captured'), an ACH
+  // debit can settle as 'captured' first and then bounce as a return/NSF up to
+  // several business days later — exactly the gap this nightly job exists to
+  // catch when the webhook for that later return is missed.
+  const finalizedNoReversal = new Set(['refunded', 'voided']);
   const newStatus =
-    row.status === 'captured' || row.status === 'refunded' || row.status === 'voided'
-      ? row.status
-      : (txn.status || 'captured');
+    finalizedNoReversal.has(row.status) ? row.status
+    : (row.status === 'captured' && !(txn.isReversal && txn.status)) ? row.status
+    : (txn.status || 'captured');
 
   await db.query(
     `UPDATE payments
@@ -274,85 +281,195 @@ async function reconcileAuthnet({ runId, cfg, from, to }) {
 // =============================================================================
 // Valor PayTech
 // -----------------------------------------------------------------------------
-// Valor's API surface for transaction history varies a bit by API revision —
-// the most common endpoints are:
-//   POST /?txnhistory          (older docs)
-//   POST /reports/transactions (newer docs)
-// We try the most common one and fall back gracefully if the merchant's
-// account uses a different shape. Anything we can't parse is recorded in
-// `meta` so the admin can paste a curl into the gateway docs to dial it in.
+// Valor splits transaction reporting across two entirely separate endpoints —
+// there is no single "give me everything" call. Confirmed live against the
+// sandbox (2026-08-07), including real field names, since Valor's own docs
+// ship an empty response schema for both:
+//
+//   Cards:  POST /?txnlist       (port 443)  txn_type: 'txnfetch_date'
+//           start_date_range / end_date_range (YYYY-MM-DD), limit (max 1000)
+//           → { number_of_records, data: [{ REF_TXN_ID, IS_SETTLED, BATCH_NO,
+//               NET_AMOUNT (cents), INVOICE_NO, PAN, CARD_SCHEME, RESPONSE_CODE,
+//               DISPLAY_MESSAGE, IS_VOID, IS_REVERSAL, REFUND_AMOUNT, ... }] }
+//
+//   ACH:    POST /?achtxnfetch   (port 4430) txn_type: 'achtxnlist'
+//           start_date / end_date (YYYY-MM-DD), limit (max 50)
+//           → { records, data: [{ uid, current_state, posting_date, amount
+//               (decimal dollars, NOT cents), batch_number, invoice_no,
+//               payee_name, account_number, routing_number, ... }] }
+//
+// We call both and merge — this is the fix for "reconcile must cover ACH as
+// well as cards, not just cards" (the old code only ever hit a single,
+// nonexistent /?txnhistory endpoint and silently returned nothing for either).
+//
+// Unlike a card decline (synchronous — already known at charge time), an ACH
+// debit can settle as 'captured' first and then return/NSF up to several
+// business days later. `current_state`/`posting_date` vocabulary for that
+// terminal-negative case hasn't been observed live yet (this sandbox account
+// has no aged/returned ACH txns to inspect), so unrecognized non-pending
+// states are never silently dropped — they're recorded in `unmatched` with
+// the raw state string so an admin can see them in the reconciliation UI and
+// we can tighten the classifier against real data as it shows up.
 // =============================================================================
 
-async function valorListSettledTxns(cfg, { from, to }) {
+async function valorListCardTxns(cfg, { from, to }) {
+  const baseUrl = cfg.mode === 'live'
+    ? 'https://securelink.valorpaytech.com:443'
+    : 'https://securelink-staging.valorpaytech.com:443';
+
+  const out = [];
+  let offset = 0;
+  const limit = 1000;
+  for (let page = 0; page < 20; page++) {
+    const body = {
+      appid: cfg.app_id || '', appkey: cfg.app_key || '', epi: String(cfg.epi_id || ''),
+      txn_type: 'txnfetch_date',
+      start_date_range: fmtValorDateOnly(from), end_date_range: fmtValorDateOnly(to),
+      limit: String(limit), offset: String(offset),
+    };
+    const res = await fetch(`${baseUrl}/?txnlist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch (_e) { json = { raw: text }; }
+    if (!res.ok) {
+      throw new Error(`Valor card txn list failed (${res.status}): ${String(json?.desc || json?.message || json?.raw || res.statusText).slice(0, 300)}`);
+    }
+    const batch = json?.data || [];
+    out.push(...batch);
+    if (batch.length < limit) break;
+    offset += limit;
+  }
+  return out;
+}
+
+async function valorListAchTxns(cfg, { from, to }) {
   const baseUrl = cfg.mode === 'live'
     ? 'https://securelink.valorpaytech.com:4430'
     : 'https://securelink-staging.valorpaytech.com:4430';
-  const endpoint = `${baseUrl}/?txnhistory`;
 
-  const body = {
-    appid:  cfg.app_id  || '',
-    appkey: cfg.app_key || '',
-    epi:    String(cfg.epi_id || ''),
-    from_date: fmtValorDate(from),
-    to_date:   fmtValorDate(to),
-    status:    'settled',
-    page:      1,
-    page_size: 500,
-  };
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
-  let json = null;
-  try { json = text ? JSON.parse(text) : null; } catch (_e) { json = { raw: text }; }
-  if (!res.ok) {
-    throw new Error(`Valor history failed (${res.status}): ${String(json?.message || json?.raw || res.statusText).slice(0, 300)}`);
+  const out = [];
+  let offset = 0;
+  const limit = 50; // Valor-documented max for this endpoint
+  for (let page = 0; page < 20; page++) {
+    const body = {
+      appid: cfg.app_id || '', appkey: cfg.app_key || '', epi: String(cfg.epi_id || ''),
+      txn_type: 'achtxnlist',
+      start_date: fmtValorDateOnly(from), end_date: fmtValorDateOnly(to),
+      limit, offset,
+    };
+    const res = await fetch(`${baseUrl}/?achtxnfetch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch (_e) { json = { raw: text }; }
+    if (!res.ok) {
+      throw new Error(`Valor ACH txn list failed (${res.status}): ${String(json?.desc || json?.message || json?.raw || res.statusText).slice(0, 300)}`);
+    }
+    const batch = json?.data || [];
+    out.push(...batch);
+    if (batch.length < limit) break;
+    offset += limit;
   }
-  // Common shapes: { data: [...] } or { transactions: [...] } or top-level array
-  return json?.data || json?.transactions || (Array.isArray(json) ? json : []);
+  return out;
+}
+
+// Card classification: IS_SETTLED is an explicit, unambiguous flag — no string
+// guessing needed. Void/reversal/refund flags are similarly explicit.
+function classifyCardTxn(t) {
+  if (String(t.IS_VOID) === '1') return 'voided';
+  if (String(t.IS_REVERSAL) === '1') return 'failed';
+  if (Number(t.REFUND_AMOUNT || 0) > 0 || Number(t.REFUND_COUNT || 0) > 0) return 'refunded';
+  if (String(t.IS_SETTLED) === '1') return 'captured';
+  return null; // not settled yet — still in flight, nothing to reconcile
+}
+
+// ACH classification: posting_date (empty → non-empty) is the confirmed,
+// observed signal for "this has posted" — current_state text is the secondary
+// signal, and is what carries a negative outcome (return/NSF) even if a
+// posting_date was already set from an earlier provisional post.
+function classifyAchTxn(t) {
+  const state = String(t.current_state || '').toLowerCase();
+  if (/return|nsf|reject|fail|declin|revers|unauth|cancel/.test(state)) return 'failed';
+  if (/void/.test(state)) return 'voided';
+  if (t.posting_date || /fund|settl|complet|success|approv|post/.test(state)) return 'captured';
+  if (/wait|pend/.test(state)) return null; // still in flight
+  return 'unknown'; // don't recognize this state — flag for triage, don't drop
 }
 
 async function reconcileValor({ runId, cfg, from, to }) {
   const summary = { batches_seen: 0, txns_seen: 0, txns_matched: 0, txns_unmatched: 0, unmatched: [] };
-  const txns = await valorListSettledTxns(cfg, { from, to });
-  summary.txns_seen = txns.length;
-
-  // Group by batch id so the UI shows "X batches"
   const batchSet = new Set();
-  for (const t of txns) {
-    const isApproved = String(t.status || t.txn_status || t.result || '').toLowerCase().includes('approv') ||
-                       String(t.status || t.txn_status || '').toLowerCase().includes('settle');
-    if (!isApproved) continue;
-    const bid = t.batch_id || t.batchId || t.batch || null;
-    if (bid) batchSet.add(String(bid));
 
+  const [cardTxns, achTxns] = await Promise.all([
+    valorListCardTxns(cfg, { from, to }),
+    valorListAchTxns(cfg, { from, to }),
+  ]);
+  summary.txns_seen = cardTxns.length + achTxns.length;
+
+  for (const t of cardTxns) {
+    const mapped = classifyCardTxn(t);
+    if (mapped === null) continue; // unsettled — expected, not an error
+    if (t.BATCH_NO) batchSet.add(String(t.BATCH_NO));
+
+    const last4 = (t.PAN || '').replace(/\s|X/gi, '').slice(-4) || null;
     const result = await applySettledTxn({
-      runId,
-      gateway: 'valor',
+      runId, gateway: 'valor',
       txn: {
-        external_txn_id: t.transactionId || t.txn_id || t.id || null,
-        invoice_number:  t.order_id || t.invoicenumber || t.invoice_number || null,
-        status:          'captured',
-        batch_id:        bid,
-        settled_at:      t.settled_at || t.settlement_date || t.txn_date || null,
-        amount:          Number(t.amount || t.settled_amount || 0) || null,
-        last4:           t.last4 || t.card_last4 || null,
-        brand:           t.card_brand || t.cardBrand || t.cardType || null,
-        expiry:          t.card_expiry || t.expiry || null,
-        holder:          t.card_holder || t.cardHolder || null,
-        auth_code:       t.auth_code || t.authCode || null,
-        avs_result:      t.avs_result || t.avsResult || null,
-        cvv_result:      t.cvv_result || t.cvvResult || null,
-        processor_msg:   t.message || t.responseMessage || null,
-        processor_code:  t.response_code || t.responseCode || null,
+        external_txn_id: t.REF_TXN_ID ? String(t.REF_TXN_ID) : null,
+        invoice_number:  t.INVOICE_NO || null,
+        status:          mapped,
+        isReversal:      mapped !== 'captured',
+        batch_id:        t.BATCH_NO || null,
+        settled_at:      t.TXN_ORIG_DATE || null,
+        amount:          Number(t.NET_AMOUNT || t.BASE_AMOUNT || 0) / 100 || null,
+        last4,
+        brand:           t.CARD_SCHEME || null,
+        holder:          t.CARDHOLDER_NAME || null,
+        auth_code:       t.AUTH_CODE || t.APPROVAL_CODE || null,
+        processor_msg:   t.DISPLAY_MESSAGE || null,
+        processor_code:  t.RESPONSE_CODE || null,
       },
     });
     if (result.matched) summary.txns_matched++;
-    else { summary.txns_unmatched++; summary.unmatched.push({ txn: t.transactionId || t.id, reason: result.reason }); }
+    else { summary.txns_unmatched++; summary.unmatched.push({ txn: t.REF_TXN_ID, method: 'card', reason: result.reason }); }
   }
+
+  for (const t of achTxns) {
+    const mapped = classifyAchTxn(t);
+    if (mapped === null) continue; // still waiting — expected, not an error
+    if (t.batch_number) batchSet.add(String(t.batch_number));
+
+    if (mapped === 'unknown') {
+      summary.txns_unmatched++;
+      summary.unmatched.push({ txn: t.uid, method: 'ach', reason: `unrecognized current_state: ${t.current_state}` });
+      continue;
+    }
+
+    const result = await applySettledTxn({
+      runId, gateway: 'valor',
+      txn: {
+        external_txn_id: t.uid || null,
+        invoice_number:  t.invoice_no || null,
+        status:          mapped,
+        isReversal:      mapped !== 'captured',
+        batch_id:        t.batch_number || null,
+        settled_at:      t.posting_date || t.txn_date || null,
+        amount:          Number(t.amount || t.base_amount || 0) || null,
+        holder:          t.payee_name || t.company_name || null,
+        processor_msg:   t.current_state || null,
+      },
+    });
+    if (result.matched) summary.txns_matched++;
+    else { summary.txns_unmatched++; summary.unmatched.push({ txn: t.uid, method: 'ach', reason: result.reason }); }
+  }
+
   summary.batches_seen = batchSet.size;
   return summary;
 }
