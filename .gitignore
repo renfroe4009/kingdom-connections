@@ -7,3 +7,12 @@ dist/
 .DS_Store
 .vercel
 .env*
+
+# VS Code Local History — snapshots every edited file, including server/.env.
+# Currently caught incidentally by the .env* rule above (snapshot filenames
+# keep the original basename), but that's not a real guarantee: a snapshot of
+# any other sensitive file wouldn't match. Ignore the directory outright.
+.history/
+
+# Database backups/dumps — client site content, never belongs in git history.
+server/backups/

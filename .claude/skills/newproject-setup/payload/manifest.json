@@ -1,0 +1,37 @@
+{
+  "packedFrom": "D:\\ClientProjects\\Tim\\kingdom-connections",
+  "files": [
+    "client/src/builder",
+    "client/src/frontend/renderer",
+    "client/src/frontend/theme",
+    "client/src/frontend/components/CartBadge.jsx",
+    "client/src/frontend/components/CartDrawer.jsx",
+    "client/src/frontend/components/AddToCartButton.jsx",
+    "client/src/frontend/components/DonationCheckout.jsx",
+    "client/src/frontend/components/PriceDisplay.jsx",
+    "client/src/frontend/components/PublicFormEmbed.jsx",
+    "client/src/frontend/context/CartContext.jsx",
+    "client/src/components/PublicLayout.jsx",
+    "client/src/vb/admin/WebsiteHeaderFooterPage.jsx",
+    "server/scripts/import-design.js",
+    "server/scripts/import-nav-from-design.js",
+    "server/scripts/ensure-builder-schema.js",
+    "server/scripts/detect-stack.js",
+    "server/scripts/lib/convert-sections.js",
+    "qa/audit.js",
+    "qa/package.json"
+  ],
+  "dependencies": {
+    "client": {
+      "@craftjs/core": "^0.2.12",
+      "@craftjs/layers": "^0.2.7",
+      "@uiw/react-codemirror": "^4.25.11",
+      "@codemirror/lang-html": "^6.4.12",
+      "@codemirror/lang-css": "^6.3.1",
+      "@codemirror/lang-javascript": "^6.2.5"
+    },
+    "server": {
+      "node-html-parser": "^9.0.1"
+    }
+  }
+}

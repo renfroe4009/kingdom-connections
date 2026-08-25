@@ -3,36 +3,92 @@ import api from '../../api/client.js';
 import PageHeader from '../../components/PageHeader.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
+import CodeEditor from '../../builder/code/CodeEditor.jsx';
 
 const SECTIONS = [
+  { key: 'theme',   label: 'Theme' },
+  { key: 'css',     label: 'CSS' },
+  { key: 'js',      label: 'JS' },
   { key: 'contact', label: 'Contact Info' },
+  { key: 'header',  label: 'Header' },
   { key: 'nav',     label: 'Navigation' },
   { key: 'social',  label: 'Social Links' },
   { key: 'footer',  label: 'Footer' },
 ];
 
+// Stored as the strings 'true'/'false' — settings are a key/value text table,
+// so a real boolean would come back as the string "1" and read as truthy even
+// when off. Rendered as checkboxes.
+const TOGGLE_KEYS = new Map([
+  ['topbar_enabled', 'true'],
+  ['header_show_cart', 'true'],
+  ['header_show_theme_toggle', 'false'],
+]);
+
+// Colour fields get a swatch alongside the text box; everything else is plain
+// text. Kept as data so the Theme tab stays declarative like the others.
+const COLOR_KEYS = new Set([
+  'primary_color', 'secondary_color', 'button_color', 'icon_color',
+  'text_on_dark', 'text_on_light', 'footer_background', 'footer_text',
+  'topbar_background', 'topbar_text_color',
+]);
+
 const TEXT_FIELDS = {
+  // Same settings the builder's Theme drawer writes, so the two surfaces stay
+  // in agreement — edit here, or against a live page in the builder.
+  theme: [
+    { key: 'primary_color',     label: 'Primary Colour',            help: '#0a1230' },
+    { key: 'secondary_color',   label: 'Secondary Colour',          help: '#f5b800' },
+    { key: 'button_color',      label: 'Button Colour',             help: 'Falls back to the primary colour when blank' },
+    { key: 'icon_color',        label: 'Icon Colour',               help: 'Falls back to the primary colour when blank' },
+    { key: 'text_on_dark',      label: 'Text on Dark Backgrounds',  help: '#ffffff' },
+    { key: 'text_on_light',     label: 'Text on Light Backgrounds', help: '#1a1f2e' },
+    { key: 'footer_background', label: 'Footer Background',         help: 'Blank uses the design’s own footer rule' },
+    { key: 'footer_text',       label: 'Footer Text Colour',        help: 'Blank uses the design’s own footer rule' },
+    { key: 'font_heading',      label: 'Heading Font Stack',        help: '"Playfair Display", Georgia, serif' },
+    { key: 'font_body',         label: 'Body Font Stack',           help: '"Inter", system-ui, sans-serif' },
+    { key: 'layout_width',      label: 'Content Width',             help: '1120px — must match the design’s container' },
+  ],
   contact: [
     { key: 'site_name',        label: 'Site Name',   help: 'Used for alt text and copyright' },
     { key: 'header_address',   label: 'Address',     help: 'Shown in the top info bar and footer' },
-    { key: 'header_phone',     label: 'Phone',       help: '904.626.7777' },
-    { key: 'header_email',     label: 'Email',       help: 'admin@vcsheriffsfoundation.org' },
-    { key: 'header_website',   label: 'Website URL', help: 'https://vcsf.org' },
-    { key: 'header_topbar_text',        label: 'Top Bar Text (desktop)', help: '501(c)(3) Nonprofit • Tax ID #20-3780163' },
-    { key: 'header_topbar_text_mobile', label: 'Top Bar Text (mobile, shorter)', help: 'Tax ID #20-3780163' },
-    { key: 'header_contact_label',      label: 'Top Bar "Contact" Link Label', help: 'Contact Us' },
-    { key: 'header_contact_url',        label: 'Top Bar "Contact" Link URL', help: '/contact' },
+    { key: 'header_phone',          label: 'Phone',            help: '555 123 4567' },
+    { key: 'header_phone_tollfree', label: 'Toll-free Phone',  help: 'Optional second number, hidden on small screens' },
+    { key: 'header_email',          label: 'Email',            help: 'info@example.org' },
+    { key: 'header_website',        label: 'Website URL',      help: 'https://example.org' },
   ],
-  nav: [
-    { key: 'header_cta_member_label', label: 'Header "Member" Button Label', help: 'Become a Member' },
-    { key: 'header_cta_member_url',   label: 'Header "Member" Button URL',   help: '/support' },
-    { key: 'header_cta_donate_label', label: 'Header "Donate" Button Label', help: 'Donate Now' },
-    { key: 'header_cta_donate_url',   label: 'Header "Donate" Button URL',   help: '/support' },
+
+  // Everything about the header chrome itself. The top-bar and cart settings
+  // were previously read by PublicLayout with no field anywhere to set them.
+  header: [
+    { key: 'header_logo_url',      label: 'Header Logo URL',            help: 'Leave blank to show the site name as text' },
+    { key: 'header_logo_dark_url', label: 'Header Logo URL (dark mode)', help: 'Shown when the visitor picks the dark theme' },
+    // The design shows a two-line brand mark beside the logo icon — a bold
+    // line and a small letter-spaced line beneath it — always together, never
+    // as a substitute for the logo. Blank line 1 falls back to Site Name so
+    // this isn't broken for a site that hasn't touched it yet; blank line 2
+    // renders nothing rather than an empty line.
+    { key: 'header_wordmark_line1', label: 'Brand Text — bold line', help: 'Blank uses Site Name' },
+    { key: 'header_wordmark_line2', label: 'Brand Text — small line (optional)', help: 'e.g. a tagline under the name' },
+    { key: 'topbar_enabled',       label: 'Show the top bar',           help: 'The thin strip above the header' },
+    { key: 'topbar_text',          label: 'Top bar text',               help: 'Shown on the left. Contact details sit on the right.' },
+    { key: 'header_contact_label', label: 'Right-side link text',       help: 'Sits after the phone number. Blank shows only the phone.' },
+    { key: 'header_contact_url',   label: 'Right-side link URL',        help: '/contact' },
+    { key: 'topbar_background',    label: 'Top bar background',         help: 'Blank keeps the colour from the design’s stylesheet' },
+    { key: 'topbar_text_color',    label: 'Top bar text colour',        help: 'Blank keeps the colour from the design’s stylesheet' },
+    { key: 'header_show_cart',        label: 'Show the shopping cart icon', help: 'Turn off for sites that don’t sell anything' },
+    { key: 'header_show_theme_toggle', label: 'Show the light/dark toggle', help: 'Only useful if the design ships a dark palette' },
   ],
+  // Header CTAs are a list (`header_cta_buttons`), not a fixed member/donate
+  // pair — that is the key PublicLayout reads. The old four text fields wrote
+  // header_cta_member_* / header_cta_donate_*, which nothing renders, so they
+  // saved happily and never appeared on the site.
+  nav: [],
   social: [
     { key: 'social_facebook',  label: 'Facebook URL' },
     { key: 'social_twitter',   label: 'Twitter / X URL' },
     { key: 'social_instagram', label: 'Instagram URL' },
+    { key: 'social_youtube',   label: 'YouTube URL' },
     { key: 'social_linkedin',  label: 'LinkedIn URL' },
   ],
 };
@@ -40,7 +96,9 @@ const TEXT_FIELDS = {
 const FOOTER_LINK_MANAGERS = [
   { key: 'footer_col2_links',  title: 'Column 2 Title', titleKey: 'footer_col2_title', label: 'Column 2 Links' },
   { key: 'footer_col3_links',  title: 'Column 3 Title', titleKey: 'footer_col3_title', label: 'Column 3 Links' },
+  { key: 'footer_col4_links',  title: 'Column 4 Title', titleKey: 'footer_col4_title', label: 'Column 4 Links' },
   { key: 'footer_cta_buttons', label: 'CTA Buttons',    titleKey: null },
+  { key: 'footer_legal_links', label: 'Bottom Bar Links', titleKey: null },
 ];
 
 const JSON_FIELDS = {
@@ -48,6 +106,19 @@ const JSON_FIELDS = {
     { key: 'footer_copyright', label: 'Copyright Name', simple: true },
   ],
 };
+
+// Footer fields rendered above the link managers. Kept separate from
+// TEXT_FIELDS.footer so they appear before the columns rather than after them.
+const FOOTER_TEXT_FIELDS = [
+  { key: 'footer_logo_url',      label: 'Footer Logo URL',             help: 'Blank falls back to the site name' },
+  { key: 'footer_logo_dark_url', label: 'Footer Logo URL (dark mode)', help: 'Shown when the visitor picks the dark theme' },
+  { key: 'footer_blurb',         label: 'Footer Blurb',                help: 'Short paragraph under the footer logo' },
+  { key: 'footer_contact_title',    label: 'Contact Column Heading',   help: 'e.g. Contact — blank hides the whole column' },
+  { key: 'footer_contact_phone',    label: 'Contact Column Phone',     help: 'Blank reuses the phone from Contact Info' },
+  { key: 'footer_contact_location', label: 'Contact Column Location',  help: 'e.g. Worldwide' },
+  { key: 'footer_domain_label',     label: 'Domain Label',             help: 'e.g. EXAMPLE.ORG — shown under the contact list' },
+  { key: 'footer_domain_url',       label: 'Domain URL',               help: 'https://example.org' },
+];
 
 function prettyJson(val) {
   try { return JSON.stringify(JSON.parse(val), null, 2); } catch { return val; }
@@ -241,7 +312,11 @@ function NavRow({ link, index, onUpdate, onRemove, onAddChild, onUpdateChild, on
 }
 
 function NavManager({ value, onChange }) {
-  const parseLinks = (v) => { try { return JSON.parse(v || '[]'); } catch { return []; } };
+  // Array-guarded: valid-but-non-array JSON (an object, a quoted string) would
+  // otherwise reach .map() and take the whole settings page down.
+  const parseLinks = (v) => {
+    try { const p = JSON.parse(v || '[]'); return Array.isArray(p) ? p : []; } catch { return []; }
+  };
   const [links, setLinks] = useState(() => parseLinks(value));
   const [dragIdx, setDragIdx] = useState(null);
   const overIdx = useRef(null);
@@ -396,7 +471,14 @@ function FooterLinkRow({ link, index, onUpdate, onRemove, dragHandlers }) {
 function FooterLinksManager({ value, onChange, label }) {
   const parse = (v) => {
     if (Array.isArray(v)) return v;
-    try { return JSON.parse(v || '[]'); } catch { return []; }
+    try {
+      const parsed = JSON.parse(v || '[]');
+      // Valid JSON is not necessarily a list — a stored '"[]"', an object, or a
+      // number all parse cleanly and then blow up on .map(). Anything that
+      // isn't an array is treated as "no links yet" rather than crashing the
+      // whole settings page.
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
   };
   const [links, setLinks] = useState(() => parse(value));
   const [dragIdx, setDragIdx] = useState(null);
@@ -549,26 +631,129 @@ export default function WebsiteHeaderFooterPage() {
             </div>
           )}
 
-          {tab === 'nav' && textFields.length > 0 && (
+          {tab === 'nav' && (
             <>
-              <h6 className="fw-semibold mb-3">Header CTA Buttons</h6>
-              <p className="text-muted small mb-3">These are the two buttons shown at the top-right of the site header (desktop and mobile).</p>
+              <h6 className="fw-semibold mb-1">Header CTA Buttons</h6>
+              <p className="text-muted small mb-3">
+                Buttons shown at the top-right of the header, and repeated at the bottom of the
+                mobile menu. Add as many as the design calls for.
+              </p>
+              <FooterLinksManager
+                label="CTA Buttons"
+                value={typeof values.header_cta_buttons === 'string'
+                  ? values.header_cta_buttons
+                  : JSON.stringify(values.header_cta_buttons || [])}
+                onChange={v => set('header_cta_buttons', v)}
+              />
+              <hr className="mt-0" />
+            </>
+          )}
+
+          {/* Site-wide CSS. This is where an imported design's stylesheet lives
+              (import-design.js writes it to site_custom_css). It is loaded after
+              the site stylesheet on every public page AND inside the builder
+              canvas, so it wins — and it is deliberately never loaded on admin
+              screens, which is what keeps the design's unscoped selectors from
+              leaking into this dashboard. */}
+          {tab === 'css' && (
+            <>
+              <h6 className="fw-semibold mb-1">Site CSS</h6>
+              <p className="text-muted small mb-3">
+                Applies to every public page and to the builder canvas. The imported design’s
+                stylesheet is stored here — edit with care, it is the whole site’s styling.
+                Do not paste this into a single page’s Custom CSS; that would load it once per page.
+              </p>
+              <CodeEditor
+                language="css"
+                value={values.site_custom_css || ''}
+                onChange={v => set('site_custom_css', v)}
+                height="520px"
+                placeholder="/* Site-wide CSS */"
+              />
+              <div className="form-text mt-2">
+                {((values.site_custom_css || '').length / 1024).toFixed(1)} KB stored
+              </div>
+            </>
+          )}
+
+          {/* Site-wide JS — public pages only. Never runs in the builder canvas,
+              so a design's scroll/carousel scripts can't fight the editor. */}
+          {tab === 'js' && (
+            <>
+              <h6 className="fw-semibold mb-1">Site JavaScript</h6>
+              <p className="text-muted small mb-3">
+                Runs on the live site only — never inside the builder canvas. The imported
+                design’s <code>main.js</code> is stored here.
+              </p>
+              <CodeEditor
+                language="javascript"
+                value={values.site_custom_js || ''}
+                onChange={v => set('site_custom_js', v)}
+                height="520px"
+                placeholder="// Site-wide JavaScript"
+              />
+              <div className="form-text mt-2">
+                {((values.site_custom_js || '').length / 1024).toFixed(1)} KB stored
+              </div>
             </>
           )}
 
           {/* Plain text fields */}
           {textFields.map(f => (
             <div key={f.key} className="mb-3">
+              {TOGGLE_KEYS.has(f.key) ? (
+                <div className="form-check">
+                  <input
+                    type="checkbox"
+                    className="form-check-input"
+                    id={`field-${f.key}`}
+                    // Values live in a key/value text table, so these are the
+                    // strings 'true'/'false'. An unset key falls back to the
+                    // same default PublicLayout applies, so the checkbox shows
+                    // what the site is actually doing before anyone saves.
+                    checked={String(values[f.key] ?? TOGGLE_KEYS.get(f.key)) === 'true'}
+                    onChange={e => set(f.key, e.target.checked ? 'true' : 'false')}
+                  />
+                  <label className="form-check-label fw-semibold small" htmlFor={`field-${f.key}`}>{f.label}</label>
+                  {f.help && <div className="form-text mt-0">{f.help}</div>}
+                </div>
+              ) : (
+              <>
               <label className="form-label fw-semibold small" htmlFor={`field-${f.key}`}>{f.label}</label>
-              <input
-                id={`field-${f.key}`}
-                type="text"
-                className="form-control"
-                value={values[f.key] || ''}
-                onChange={e => set(f.key, e.target.value)}
-                placeholder={f.help || ''}
-              />
+              {COLOR_KEYS.has(f.key) ? (
+                <div className="d-flex align-items-center gap-2">
+                  <input
+                    type="color"
+                    className="form-control form-control-color flex-shrink-0"
+                    aria-label={`${f.label} colour picker`}
+                    // A blank setting means "use the design's own value", which a
+                    // colour input can't represent — show black but leave the
+                    // stored value empty until the user actually picks something.
+                    value={/^#[0-9a-f]{6}$/i.test(values[f.key] || '') ? values[f.key] : '#000000'}
+                    onChange={e => set(f.key, e.target.value)}
+                  />
+                  <input
+                    id={`field-${f.key}`}
+                    type="text"
+                    className="form-control"
+                    value={values[f.key] || ''}
+                    onChange={e => set(f.key, e.target.value)}
+                    placeholder={f.help || ''}
+                  />
+                </div>
+              ) : (
+                <input
+                  id={`field-${f.key}`}
+                  type="text"
+                  className="form-control"
+                  value={values[f.key] || ''}
+                  onChange={e => set(f.key, e.target.value)}
+                  placeholder={f.help || ''}
+                />
+              )}
               {f.help && <div className="form-text">{f.help}</div>}
+              </>
+              )}
             </div>
           ))}
 
@@ -588,6 +773,23 @@ export default function WebsiteHeaderFooterPage() {
             />
           )}
 
+          {/* Footer identity — logo and blurb, above the link columns */}
+          {tab === 'footer' && FOOTER_TEXT_FIELDS.map(f => (
+            <div key={f.key} className="mb-3">
+              <label className="form-label fw-semibold small" htmlFor={`field-${f.key}`}>{f.label}</label>
+              <input
+                id={`field-${f.key}`}
+                type="text"
+                className="form-control"
+                value={values[f.key] || ''}
+                onChange={e => set(f.key, e.target.value)}
+                placeholder={f.help || ''}
+              />
+              <div className="form-text">{f.help}</div>
+            </div>
+          ))}
+          {tab === 'footer' && <hr className="mt-1 mb-4" />}
+
           {/* Footer visual link managers */}
           {tab === 'footer' && FOOTER_LINK_MANAGERS.map(f => (
             <div key={f.key} className="mb-5">
@@ -606,7 +808,9 @@ export default function WebsiteHeaderFooterPage() {
               )}
               <FooterLinksManager
                 label={f.label}
-                value={typeof values[f.key] === 'string' ? values[f.key] : JSON.stringify(values[f.key] || '[]')}
+                // `|| []`, not `|| '[]'` — stringifying the *string* '[]' yields
+                // '"[]"', which parses back to a string and has no .map().
+                value={typeof values[f.key] === 'string' ? values[f.key] : JSON.stringify(values[f.key] || [])}
                 onChange={v => set(f.key, v)}
               />
               <hr className="mt-0" />

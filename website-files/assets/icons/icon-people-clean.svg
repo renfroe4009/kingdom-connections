@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <!-- left person -->
+  <circle cx="6.5" cy="8" r="2.4"/>
+  <path d="M2.2 17.2c0-2.3 1.9-3.9 4.3-3.9s4.3 1.6 4.3 3.9v.3H2.2v-.3z"/>
+  <!-- right person -->
+  <circle cx="17.5" cy="8" r="2.4"/>
+  <path d="M13.2 17.2c0-2.3 1.9-3.9 4.3-3.9s4.3 1.6 4.3 3.9v.3h-8.6v-.3z"/>
+  <!-- front person -->
+  <circle cx="12" cy="9.2" r="2.8"/>
+  <path d="M6.8 18.5c0-2.7 2.3-4.6 5.2-4.6s5.2 1.9 5.2 4.6v.5H6.8v-.5z"/>
+</svg>

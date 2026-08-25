@@ -1,23 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Render } from '@measured/puck';
 import api from '../../api/client.js';
-import '../vcsf-design.css';
-
-// Must match the config in WebsitePageEditor.jsx exactly
-import { puckConfig } from '../../vb/builder/puckConfig.jsx';
-
-function normalizePuckData(data) {
-  if (!data || !Array.isArray(data.content)) return data;
-  return {
-    ...data,
-    content: data.content.map((block) => {
-      if (block.props && block.props.id) return block;
-      const id = block.id || `${block.type}-${Math.random().toString(36).slice(2, 10)}`;
-      return { ...block, props: { id, ...(block.props || {}) } };
-    }),
-  };
-}
+import PageRenderer from '../renderer/PageRenderer.jsx';
 
 export default function WebsitePublicPage({ slug: slugProp }) {
   const { slug: slugParam } = useParams();
@@ -37,7 +21,9 @@ export default function WebsitePublicPage({ slug: slugProp }) {
 
   useEffect(() => {
     if (!page) return;
-    document.title = page.meta_title || page.title || "Ventura County Sheriff's Foundation";
+    // No client name hardcoded here — this file is part of the reusable bundle,
+    // and a baked-in fallback becomes the next project's stray title.
+    document.title = page.meta_title || page.title || '';
 
     function setMeta(name, content, prop = false) {
       if (!content) return;
@@ -69,30 +55,8 @@ export default function WebsitePublicPage({ slug: slugProp }) {
     </div>
   );
 
-  // Inject per-page custom CSS if present
-  const customCss = page.custom_css;
-
-  // No puck_data yet — show placeholder
-  if (!page.puck_data || !page.puck_data.content) {
-    return (
-      <div className="container py-5 text-center text-muted">
-        <h2>{page.title}</h2>
-        <p>This page has no published content yet.</p>
-      </div>
-    );
-  }
-
-  const filteredData = normalizePuckData({
-    ...page.puck_data,
-    content: (page.puck_data.content || []).filter(
-      item => item.type !== 'Header' && item.type !== 'Footer'
-    ),
-  });
-
-  return (
-    <div className="vcsf-page">
-      {customCss && <style>{customCss}</style>}
-      <Render config={puckConfig} data={filteredData} />
-    </div>
-  );
+  // PageRenderer owns both modes (visual Craft tree / raw code) and the
+  // per-page custom CSS + JS. The header and footer come from PublicLayout,
+  // which wraps this route — they are never page content.
+  return <PageRenderer page={page} />;
 }
