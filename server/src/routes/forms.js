@@ -58,6 +58,9 @@ const formSchema = z.object({
   crm_action:       z.enum(['none','create_contact','create_contact_deal','volunteer_signup']).optional().nullable(),
   crm_mapping_json: z.any().optional().nullable(),
   redirect_url:     z.string().optional().nullable(),
+  html_id:          z.string().optional().nullable(),
+  css_class:        z.string().optional().nullable(),
+  submit_class:     z.string().optional().nullable(),
   honeypot:         z.boolean().optional(),
   fields:           z.array(fieldSchema).optional(),
 });
@@ -78,7 +81,8 @@ router.get('/public/:slug', async (req, res, next) => {
   try {
     const slug = req.params.slug;
     const [[form]] = await db.query(
-      `SELECT id, name, slug, description, submit_text, success_msg, redirect_url, honeypot
+      `SELECT id, name, slug, description, submit_text, success_msg, redirect_url,
+              html_id, css_class, submit_class, honeypot
        FROM forms WHERE slug = :slug AND is_active = 1`,
       { slug }
     );
@@ -288,8 +292,9 @@ router.post('/', requireAuth, requirePermission('settings.manage'), async (req, 
     const [r] = await db.query(
       `INSERT INTO forms
         (name, slug, description, submit_text, success_msg, notify_email,
-         is_active, crm_action, crm_mapping_json, redirect_url, honeypot)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         is_active, crm_action, crm_mapping_json, redirect_url,
+         html_id, css_class, submit_class, honeypot)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         body.name, body.slug, body.description ?? null,
         body.submit_text ?? 'Submit', body.success_msg ?? null,
@@ -297,6 +302,7 @@ router.post('/', requireAuth, requirePermission('settings.manage'), async (req, 
         body.crm_action || 'none',
         body.crm_mapping_json != null ? JSON.stringify(body.crm_mapping_json) : null,
         body.redirect_url || null,
+        body.html_id || null, body.css_class || null, body.submit_class || null,
         body.honeypot !== false ? 1 : 0,
       ]
     );
@@ -316,7 +322,8 @@ router.put('/:id', requireAuth, requirePermission('settings.manage'), async (req
     if (body.name && !body.slug) body.slug = toSlug(body.name);
 
     const META = ['name','slug','description','submit_text','success_msg','notify_email',
-                  'is_active','crm_action','crm_mapping_json','redirect_url','honeypot'];
+                  'is_active','crm_action','crm_mapping_json','redirect_url',
+                  'html_id','css_class','submit_class','honeypot'];
     const sets = [], params = [];
     for (const key of META) {
       if (!(key in body)) continue;

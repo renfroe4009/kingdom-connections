@@ -382,6 +382,13 @@ function SettingsPanel({ meta, onChange }) {
         <div className="card-body">
           <label style={sl}>Submit Button Text</label>
           <input className="form-control form-control-sm mb-3" value={meta.submit_text||''} onChange={e => set('submit_text', e.target.value)} />
+          <label style={sl}>Form ID</label>
+          <input className="form-control form-control-sm mb-1" placeholder="contact-form" value={meta.html_id||''} onChange={e => set('html_id', e.target.value)} />
+          <p className="text-muted mb-3" style={{ fontSize:'0.77rem' }}>The id attribute on the &lt;form&gt; element. Also usable as an anchor: #your-id.</p>
+          <label style={sl}>Form CSS class</label>
+          <input className="form-control form-control-sm mb-3" placeholder="e.g. contact-form-grid" value={meta.css_class||''} onChange={e => set('css_class', e.target.value)} />
+          <label style={sl}>Submit button class</label>
+          <input className="form-control form-control-sm mb-3" placeholder="btn btn-gold btn-block btn-xl" value={meta.submit_class||''} onChange={e => set('submit_class', e.target.value)} />
           <label style={sl}>Success Message</label>
           <textarea className="form-control form-control-sm mb-3" rows={2} value={meta.success_msg||''} onChange={e => set('success_msg', e.target.value)} />
           <label style={sl}>Redirect URL after submit (overrides success message)</label>
@@ -449,7 +456,8 @@ export default function FormBuilder() {
   const [meta,       setMeta]       = useState({
     name:'New Form', slug:'', description:'', submit_text:'Submit',
     success_msg:'Thank you! Your submission has been received.',
-    notify_email:'', redirect_url:'', is_active:true, honeypot:true, crm_action:'none',
+    notify_email:'', redirect_url:'', html_id:'', css_class:'', submit_class:'',
+    is_active:true, honeypot:true, crm_action:'none',
   });
   const [crmMapping, setCrmMapping] = useState({});
   const [saving,     setSaving]     = useState(false);
@@ -472,6 +480,9 @@ export default function FormBuilder() {
         success_msg:  rest.success_msg  || '',
         notify_email: rest.notify_email || '',
         redirect_url: rest.redirect_url || '',
+        html_id:      rest.html_id      || '',
+        css_class:    rest.css_class    || '',
+        submit_class: rest.submit_class || '',
         is_active:    rest.is_active    !== 0,
         honeypot:     rest.honeypot     !== 0,
         crm_action:   rest.crm_action   || 'none',
