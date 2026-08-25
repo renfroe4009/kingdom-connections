@@ -90,8 +90,10 @@ app.use(helmet({
   // while still sending the CORP header so browsers can honour it (Finding 11).
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
+// Browsers send Origin without a trailing slash, so normalise one away here —
+// otherwise a CLIENT_ORIGIN pasted as a full URL silently fails every request.
 const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
-  .split(',').map((o) => o.trim()).filter(Boolean);
+  .split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean);
 app.use(cors({
   origin: (origin, cb) => {
     // Allow requests with no origin (curl, Postman, server-to-server)

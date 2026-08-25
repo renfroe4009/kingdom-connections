@@ -185,8 +185,11 @@ router.post('/versions/:vid/restore', requireAuth, requirePermission('settings.m
 // GET /api/website/public-settings — unauthenticated, for the live public site.
 // Merges business_settings (company identity, already configured) with any
 // website_global_settings overrides an admin has made via the site editor.
-// Falls back to VCSF's published branding where neither has a value yet,
-// rather than generic/blank placeholders.
+// Every row in website_global_settings is passed through verbatim, so a key
+// the frontend theme layer adds later needs no change here. The explicit
+// entries below only supply fallbacks for identity fields that can come from
+// business_settings. Fallbacks are deliberately neutral — a hardcoded brand
+// here silently becomes another client's site.
 router.get('/public-settings', async (req, res) => {
   try {
     const [[biz]] = await db.query(
@@ -195,7 +198,11 @@ router.get('/public-settings', async (req, res) => {
          FROM business_settings WHERE id = 1`
     );
     const [rows] = await db.query('SELECT setting_key, setting_value FROM website_global_settings');
-    const JSON_FIELDS = new Set(['header_nav_links', 'footer_col2_links', 'footer_col3_links', 'footer_cta_buttons']);
+    const JSON_FIELDS = new Set([
+      'header_nav_links', 'header_cta_buttons',
+      'footer_col2_links', 'footer_col3_links', 'footer_col4_links',
+      'footer_cta_buttons',
+    ]);
     const overrides = {};
     rows.forEach((r) => {
       if (JSON_FIELDS.has(r.setting_key)) {
@@ -208,40 +215,37 @@ router.get('/public-settings', async (req, res) => {
     const bizAddress = [biz?.address, [biz?.city, biz?.state, biz?.zip].filter(Boolean).join(', ')]
       .filter(Boolean).join('\n');
 
+    // An unset setting is stored as '' rather than removed, so spreading the
+    // raw rows would blank out the business_settings fallbacks below. Drop
+    // empties instead — clearing a field in the admin falls back, as before.
+    const set = Object.fromEntries(
+      Object.entries(overrides).filter(([, v]) => v !== '' && v != null)
+    );
+
     res.json({
-      site_name:       overrides.site_name       ?? biz?.business_name ?? "Ventura County Sheriff's Foundation",
-      header_logo_url: overrides.header_logo_url ?? biz?.logo_web_url  ?? '/vcsf/logo-header.png',
-      footer_logo_url: overrides.footer_logo_url ?? '/vcsf/logo-footer.png',
-      header_address:  overrides.header_address  ?? (bizAddress || 'P.O. Box 3007\nCamarillo, CA 93011'),
-      header_phone:    overrides.header_phone    ?? biz?.phone ?? '626-407-8761',
-      header_phone_tollfree: overrides.header_phone_tollfree ?? '',
-      header_email:    overrides.header_email    ?? biz?.email ?? 'info@vcsf.org',
-      header_website:  overrides.header_website  ?? (biz?.website ? `https://${biz.website.replace(/^https?:\/\//, '')}` : 'https://vcsf.org'),
-      header_topbar_text:        overrides.header_topbar_text        ?? '501(c)(3) Nonprofit • Tax ID #20-3780163',
-      header_topbar_text_mobile: overrides.header_topbar_text_mobile ?? 'Tax ID #20-3780163',
-      header_contact_label:      overrides.header_contact_label      ?? 'Contact Us',
-      header_contact_url:        overrides.header_contact_url        ?? '/contact',
-      primary_color:   overrides.primary_color   ?? biz?.primary_color   ?? '#0A1F3D',
-      secondary_color: overrides.secondary_color ?? biz?.secondary_color ?? '#C9A227',
-      social_facebook:  overrides.social_facebook  ?? '',
-      social_instagram: overrides.social_instagram ?? '',
-      social_linkedin:  overrides.social_linkedin  ?? '',
-      footer_copyright:  overrides.footer_copyright  ?? `${biz?.business_name || "Ventura County Sheriff's Foundation"}`,
-      footer_col2_title: overrides.footer_col2_title ?? 'Services',
-      footer_col2_links: overrides.footer_col2_links ?? [],
-      footer_col3_title: overrides.footer_col3_title ?? 'Company',
-      footer_col3_links: overrides.footer_col3_links ?? [{ label: 'Blog', url: '/blog' }],
-      footer_cta_buttons: overrides.footer_cta_buttons ?? [],
-      header_nav_links:  overrides.header_nav_links  ?? [{ label: 'Home', url: '/' }, { label: 'Blog', url: '/blog' }],
-      header_cta_member_label: overrides.header_cta_member_label ?? 'Become a Member',
-      header_cta_member_url:   overrides.header_cta_member_url   ?? '/support',
-      header_cta_donate_label: overrides.header_cta_donate_label ?? 'Donate Now',
-      header_cta_donate_url:   overrides.header_cta_donate_url   ?? '/support',
-      // Global Website Settings — layout only (colors stay owned by business_settings/theme).
-      layout_desktop_max_width: overrides.layout_desktop_max_width ?? '',
-      layout_mobile_max_width:  overrides.layout_mobile_max_width  ?? '',
-      layout_mobile_mode:       overrides.layout_mobile_mode       ?? 'match-header',
-      layout_font_family:       overrides.layout_font_family       ?? 'inter',
+      // Identity — business_settings is the fallback source for these.
+      site_name:       biz?.business_name ?? '',
+      header_logo_url: biz?.logo_web_url  ?? '',
+      header_address:  bizAddress,
+      header_phone:    biz?.phone ?? '',
+      header_email:    biz?.email ?? '',
+      header_website:  biz?.website ? `https://${biz.website.replace(/^https?:\/\//, '')}` : '',
+      primary_color:   biz?.primary_color   ?? '',
+      secondary_color: biz?.secondary_color ?? '',
+
+      // Collections default to empty so the layout renders nothing rather than
+      // placeholder links that 404.
+      header_nav_links: [],
+      header_cta_buttons: [],
+      footer_col2_links: [],
+      footer_col3_links: [],
+      footer_col4_links: [],
+      footer_cta_buttons: [],
+
+      // Admin-configured values win over every default above. This spread is
+      // what carries site_custom_css / site_custom_js — without it the
+      // imported design's stylesheet never reaches the public page.
+      ...set,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -277,6 +281,16 @@ router.get('/search', async (req, res) => {
     if (!q.trim()) return res.json([]);
     const term = `%${q.trim()}%`;
 
+    // Some sources below belong to verticals a given install may not have
+    // (the Panther builders' manual, for one). Under Promise.all a single
+    // missing table rejects the whole batch and search returns 500 site-wide —
+    // so an absent optional table degrades to "no results from that source"
+    // instead. Only ER_NO_SUCH_TABLE is swallowed; real SQL errors still throw.
+    const optional = (promise) => promise.catch((err) => {
+      if (err?.code === 'ER_NO_SUCH_TABLE') return [];
+      throw err;
+    });
+
     const [pages, products, completions, kbArticles, blogPosts] = await Promise.all([
       // CMS pages
       db.query(
@@ -300,7 +314,7 @@ router.get('/search', async (req, res) => {
       ).then(([r]) => r),
 
       // Panther builder completions
-      db.query(
+      optional(db.query(
         `SELECT id, CONCAT(builder_name, ' — ', COALESCE(title, aircraft)) AS title,
                 'panther/completions' AS slug,
                 CONCAT(COALESCE(aircraft,''), IF(home_base IS NOT NULL, CONCAT(' · ', home_base), '')) AS meta_desc,
@@ -309,10 +323,10 @@ router.get('/search', async (req, res) => {
          WHERE builder_name LIKE :term OR title LIKE :term OR aircraft LIKE :term OR home_base LIKE :term
          LIMIT 5`,
         { term }
-      ).then(([r]) => r),
+      ).then(([r]) => r)),
 
       // KB / Builders Manual articles
-      db.query(
+      optional(db.query(
         `SELECT id, title, CONCAT('builders-manual?article=', id) AS slug,
                 LEFT(body_text, 160) AS meta_desc, 'kb' AS result_type
          FROM kb_articles
@@ -320,7 +334,7 @@ router.get('/search', async (req, res) => {
            AND (title LIKE :term OR body_text LIKE :term)
          LIMIT 10`,
         { term }
-      ).then(([r]) => r),
+      ).then(([r]) => r)),
 
       // Blog posts
       db.query(

@@ -1,0 +1,458 @@
+/* =============================================================================
+ * SITE STYLESHEET — the public website's design system.
+ *
+ * ⚠️ This file is NEVER imported into the app bundle. It is loaded per-surface
+ * as a <link> (see useSiteStylesheet.js) on public routes, and injected into
+ * the builder's canvas iframe. Importing it globally would let its selectors
+ * restyle the admin dashboard.
+ *
+ * Every selector here is prefixed `bx-` for that same reason — no bare `body`,
+ * `*`, `.btn`, `.card` or `.container` rules that could collide with Bootstrap.
+ *
+ * COLOURS: never hardcode a brand colour in a component. Components consume the
+ * `--bx-*` tokens below, and those derive from the `--brand-*` variables that
+ * admin settings write onto :root at runtime (see siteTheme.js). That chain is
+ * what makes "change the primary colour in admin" actually repaint the site.
+ * ========================================================================== */
+
+:root {
+  /* ── Brand inputs ──────────────────────────────────────────────────────────
+     Written at runtime from Business Profile + Web Settings. The values here
+     are neutral greys on purpose: if theming ever fails to load, the site
+     looks unbranded rather than looking like somebody else's brand. */
+  --brand-primary: #1f2937;
+  --brand-secondary: #4b5563;
+  --brand-button: var(--brand-secondary);
+  --brand-icon: var(--brand-primary);
+  --brand-text-on-dark: #ffffff;
+  --brand-text-on-light: #1f2937;
+  --brand-font-heading: Arial, Helvetica, sans-serif;
+  --brand-font-body: Arial, Helvetica, sans-serif;
+  --brand-layout-width: 1200px;
+
+  /* ── Component design tokens ───────────────────────────────────────────────
+     These MUST derive from the brand variables above. On the previous build
+     these were two disconnected systems — blocks used hardcoded hex, so admin
+     colour settings changed nothing. */
+  --bx-primary: var(--brand-primary);
+  --bx-secondary: var(--brand-secondary);
+  --bx-button-bg: var(--brand-button);
+  --bx-button-fg: var(--brand-text-on-dark);
+  --bx-icon: var(--brand-icon);
+
+  --bx-text: var(--brand-text-on-light);
+  --bx-text-muted: color-mix(in srgb, var(--brand-text-on-light) 65%, transparent);
+  --bx-text-invert: var(--brand-text-on-dark);
+  --bx-bg: #ffffff;
+  --bx-surface: #f8fafc;
+  --bx-border: color-mix(in srgb, var(--brand-text-on-light) 14%, transparent);
+
+  --bx-font-heading: var(--brand-font-heading);
+  --bx-font-body: var(--brand-font-body);
+  --bx-container: var(--brand-layout-width);
+
+  --bx-radius: 8px;
+  --bx-gap: 24px;
+  --bx-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.18);
+  --bx-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Page root ─────────────────────────────────────────────────────────────
+   Scoped wrapper rather than `body`, so this can share a document with the
+   admin shell during a client-side route change without bleeding into it. */
+.bx-page {
+  /* font-family: var(--bx-font-body); */
+  /* color: var(--bx-text); */
+  /* background: var(--bx-bg); */
+  /* line-height: 1.6; */
+}
+/* Overflow guard only — the one blanket rule worth keeping, since an oversized
+   image breaks the layout of any design. */
+.bx-page img { max-width: 100%; height: auto; }
+
+/* ── Fixed-header clearance ────────────────────────────────────────────────
+   A design whose site header is `position: fixed` takes its height out of the
+   document flow. Designs typically don't reserve that on <body>; they bake it
+   into whatever section comes first (`.page-hero { padding-top: calc(
+   var(--nav-height) + 56px) }`). Imported pages inherit that and sit correctly.
+
+   A page built from our own components has no such section, so its first
+   Section slides underneath the header. Reserve the space here instead.
+
+   Clearance is therefore ON by default and opted out of only when the first
+   section actually contains a class that already reserves the space. Keying on
+   "is it imported?" does not work: imported pages can be missing their hero
+   section entirely, and then nothing reserves anything.
+
+   ⚠️ PER-PROJECT: `.hero, .page-hero` are this design's offset-carrying
+   classes. A different design uses different names — update this list, or the
+   first section gains a duplicate gap. Defaulting to ON is the safe direction:
+   a spurious gap is visible and cosmetic, hidden content is neither.
+
+   Applied as a margin rather than padding so it can't fight the Section
+   panel's own padding controls, and `var(--nav-height, 0px)` means a design
+   without a fixed header gets nothing. Override per page in
+   Page settings → Custom CSS.
+
+   Both forms have to be excluded: the section may *carry* the class (a builder
+   Section given `page-hero` in its Custom CSS class field) or *contain* an
+   element that does (imported markup). `:has()` only sees descendants, so the
+   self case needs its own `:not()`. */
+.bx-page > .bx-section:first-child:not(:is(.hero, .page-hero)):not(:has(.hero, .page-hero)) {
+  margin-top: var(--nav-height, 0px);
+}
+
+/* In the builder the header is forced `position: static` so it can't cover the
+   per-block toolbar — it occupies real space there, so the offset would be
+   added twice and leave a gap the live page doesn't have. */
+.bx-canvas .bx-page > .bx-section:first-child { margin-top: 0; }
+
+/* ⚠️ Nothing else here may target bare elements (`a`, `p`, `h1`…).
+   `.bx-page` wraps imported markup as well as our own components, so a rule
+   like `.bx-page a { color: … }` (specificity 0,1,1) silently outranks a
+   design's own `.btn--primary { color: #fff }` (0,1,0) and repaints every
+   link and button on the site. Style our components by their own `bx-` class
+   instead — see .bx-heading, .bx-text, .bx-btn below. */
+
+/* ═══ LAYOUT PRIMITIVES ═══════════════════════════════════════════════════ */
+
+/* Section — the top-level band. Full-bleed background, constrained inner. */
+.bx-section {
+  position: relative;
+  width: 100%;
+  padding-top: var(--bx-section-pt, 64px);
+  padding-bottom: var(--bx-section-pb, 64px);
+  background-color: var(--bx-section-bg, transparent);
+  background-image: var(--bx-section-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  color: var(--bx-section-fg, inherit);
+}
+.bx-section__inner {
+  max-width: var(--bx-section-width, var(--bx-container));
+  margin-inline: auto;
+  padding-inline: var(--bx-section-px, 24px);
+}
+.bx-section--full .bx-section__inner {
+  max-width: none;
+  padding-inline: var(--bx-section-px, 0px);
+}
+/* Overlay for sections with a background image, so text stays readable. */
+.bx-section--overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--bx-section-overlay, rgb(0 0 0 / 0.45));
+}
+.bx-section--overlay > .bx-section__inner { position: relative; z-index: 1; }
+
+/* Row — a 12-column grid. Columns declare their own span. */
+.bx-row {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--bx-row-gap, var(--bx-gap));
+  align-items: var(--bx-row-align, stretch);
+  justify-items: stretch;
+}
+.bx-row--flex {
+  display: flex;
+  flex-wrap: var(--bx-row-wrap, wrap);
+  justify-content: var(--bx-row-justify, flex-start);
+}
+.bx-row--flex > .bx-col { flex: 1 1 0; min-width: 0; }
+
+/* Column — spans set per breakpoint via inline custom properties. */
+.bx-col {
+  grid-column: span var(--bx-col-span, 12) / span var(--bx-col-span, 12);
+  min-width: 0;
+  padding: var(--bx-col-p, 0);
+  display: flex;
+  flex-direction: column;
+  gap: var(--bx-col-gap, 16px);
+  justify-content: var(--bx-col-justify, flex-start);
+  align-items: var(--bx-col-align, stretch);
+  text-align: var(--bx-col-text-align, inherit);
+}
+
+/* Tablet: fall back to the tablet span, else the desktop span. */
+@media (max-width: 1024px) {
+  .bx-col {
+    grid-column: span var(--bx-col-span-md, var(--bx-col-span, 12))
+               / span var(--bx-col-span-md, var(--bx-col-span, 12));
+  }
+}
+/* Mobile: columns stack full-width unless an explicit mobile span is set. */
+@media (max-width: 767px) {
+  .bx-col {
+    grid-column: span var(--bx-col-span-sm, 12) / span var(--bx-col-span-sm, 12);
+  }
+  .bx-row--flex { flex-direction: column; }
+  .bx-section { padding-top: var(--bx-section-pt-sm, 40px); padding-bottom: var(--bx-section-pb-sm, 40px); }
+}
+
+/* ═══ CONTENT COMPONENTS ══════════════════════════════════════════════════ */
+
+.bx-heading {
+  font-family: var(--bx-font-heading);
+  line-height: 1.2;
+  color: var(--bx-heading-color, inherit);
+  font-size: var(--bx-heading-size, 2rem);
+  font-weight: var(--bx-heading-weight, 700);
+  text-align: var(--bx-heading-align, inherit);
+  margin: 0;
+}
+.bx-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--bx-eyebrow-color, var(--bx-secondary));
+}
+.bx-text {
+  color: var(--bx-text-color, inherit);
+  font-size: var(--bx-text-size, 1rem);
+  text-align: var(--bx-text-align, inherit);
+}
+.bx-text :where(a) { color: var(--bx-primary); }
+.bx-text :where(p) { margin: 0 0 1em; }
+.bx-text :where(p):last-child { margin-bottom: 0; }
+.bx-text :where(ul, ol) { margin: 0 0 1em; padding-left: 1.4em; }
+
+.bx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  padding: var(--bx-btn-py, 12px) var(--bx-btn-px, 24px);
+  border-radius: var(--bx-btn-radius, var(--bx-radius));
+  font-weight: 600;
+  font-size: var(--bx-btn-size, 1rem);
+  text-decoration: none;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: var(--bx-transition);
+  background: var(--bx-btn-bg, var(--bx-button-bg));
+  color: var(--bx-btn-fg, var(--bx-button-fg));
+}
+.bx-btn:hover { filter: brightness(0.92); transform: translateY(-1px); }
+.bx-btn--outline {
+  background: transparent;
+  border-color: var(--bx-btn-bg, var(--bx-button-bg));
+  color: var(--bx-btn-bg, var(--bx-button-bg));
+}
+.bx-btn--outline:hover {
+  background: var(--bx-btn-bg, var(--bx-button-bg));
+  color: var(--bx-btn-fg, var(--bx-button-fg));
+  filter: none;
+}
+.bx-btn--ghost {
+  background: transparent;
+  color: var(--bx-btn-bg, var(--bx-button-bg));
+  padding-inline: 0;
+}
+.bx-btn--ghost:hover { transform: none; text-decoration: underline; }
+.bx-btn--block { display: flex; width: 100%; }
+
+.bx-image { display: block; width: 100%; border-radius: var(--bx-image-radius, 0); }
+.bx-image--contain { object-fit: contain; }
+.bx-image--cover { object-fit: cover; }
+.bx-figure { margin: 0; }
+.bx-figure figcaption {
+  font-size: 0.85rem;
+  color: var(--bx-text-muted);
+  margin-top: 8px;
+  text-align: center;
+}
+
+.bx-divider {
+  border: 0;
+  height: var(--bx-divider-h, 1px);
+  background: var(--bx-divider-color, var(--bx-border));
+  margin: 0;
+}
+.bx-spacer { display: block; height: var(--bx-spacer-h, 32px); }
+@media (max-width: 767px) {
+  .bx-spacer { height: var(--bx-spacer-h-sm, var(--bx-spacer-h, 32px)); }
+}
+
+/* Card grid — auto-fit so it never needs a per-instance breakpoint. */
+.bx-card-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--bx-cards, 3), minmax(0, 1fr));
+  gap: var(--bx-card-gap, var(--bx-gap));
+}
+@media (max-width: 1024px) {
+  .bx-card-grid { grid-template-columns: repeat(min(var(--bx-cards, 3), 2), minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .bx-card-grid { grid-template-columns: 1fr; }
+}
+.bx-card {
+  background: var(--bx-card-bg, var(--bx-bg));
+  border: 1px solid var(--bx-border);
+  border-radius: var(--bx-radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: var(--bx-transition);
+}
+.bx-card--hover:hover { transform: translateY(-6px); box-shadow: var(--bx-shadow); }
+.bx-card__media { aspect-ratio: 16 / 10; object-fit: cover; width: 100%; }
+.bx-card__body { padding: 20px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.bx-card__title { font-family: var(--bx-font-heading); font-size: 1.15rem; font-weight: 700; line-height: 1.2; margin: 0; }
+.bx-card__eyebrow { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--bx-accent, var(--bx-primary)); margin: 0; }
+.bx-card__text { color: var(--bx-text-muted); font-size: 0.95rem; margin: 0; }
+.bx-card__details { color: var(--bx-text-muted); font-size: 0.9rem; margin: 0; }
+.bx-card__icon { font-size: 1.75rem; color: var(--bx-icon); }
+
+/* Accordion / FAQ */
+.bx-accordion { display: flex; flex-direction: column; gap: 8px; }
+.bx-accordion__item { border: 1px solid var(--bx-border); border-radius: var(--bx-radius); overflow: hidden; }
+.bx-accordion__head {
+  width: 100%;
+  text-align: left;
+  padding: 16px 20px;
+  background: var(--bx-surface);
+  border: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  color: inherit;
+}
+.bx-accordion__head[aria-expanded='true'] { color: var(--bx-primary); }
+.bx-accordion__body { padding: 16px 20px; }
+
+/* Tabs */
+.bx-tabs__list { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--bx-border); }
+.bx-tabs__tab {
+  padding: 10px 18px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--bx-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.bx-tabs__tab[aria-selected='true'] { color: var(--bx-primary); border-bottom-color: var(--bx-primary); }
+.bx-tabs__panel { padding-top: 20px; }
+
+/* Gallery */
+.bx-gallery {
+  display: grid;
+  grid-template-columns: repeat(var(--bx-gallery-cols, 3), minmax(0, 1fr));
+  gap: var(--bx-card-gap, 12px);
+}
+@media (max-width: 640px) { .bx-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.bx-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--bx-radius); }
+
+/* Video */
+.bx-video { position: relative; aspect-ratio: 16 / 9; width: 100%; border-radius: var(--bx-radius); overflow: hidden; background: #000; }
+.bx-video iframe, .bx-video video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* Stats */
+.bx-stats { display: grid; grid-template-columns: repeat(var(--bx-stat-cols, 4), minmax(0, 1fr)); gap: var(--bx-gap); }
+@media (max-width: 640px) { .bx-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.bx-stat { text-align: center; }
+.bx-stat__value { font-family: var(--bx-font-heading); font-size: 2.5rem; font-weight: 700; color: var(--bx-primary); font-feature-settings: 'tnum'; }
+.bx-stat__label { color: var(--bx-text-muted); font-size: 0.9rem; }
+
+/* Testimonials */
+.bx-quote { display: flex; flex-direction: column; gap: 16px; }
+.bx-quote__text { font-size: 1.1rem; font-style: italic; margin: 0; }
+.bx-quote__who { display: flex; align-items: center; gap: 12px; }
+.bx-quote__avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+.bx-quote__name { font-weight: 600; }
+.bx-quote__role { font-size: 0.85rem; color: var(--bx-text-muted); }
+
+/* Logo strip */
+.bx-logos { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 40px; }
+.bx-logos img { max-height: var(--bx-logo-h, 48px); width: auto; filter: grayscale(100%); opacity: 0.7; transition: var(--bx-transition); }
+.bx-logos img:hover { filter: none; opacity: 1; }
+
+/* ═══ FEATURE COMPONENTS ══════════════════════════════════════════════════ */
+
+.bx-form { display: flex; flex-direction: column; gap: 16px; }
+.bx-form label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 6px; }
+.bx-form input, .bx-form textarea, .bx-form select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--bx-border);
+  border-radius: var(--bx-radius);
+  font: inherit;
+  background: var(--bx-bg);
+  color: var(--bx-text);
+  transition: var(--bx-transition);
+}
+.bx-form input:focus, .bx-form textarea:focus, .bx-form select:focus {
+  outline: none;
+  border-color: var(--bx-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bx-primary) 18%, transparent);
+}
+
+.bx-products { display: grid; grid-template-columns: repeat(var(--bx-cards, 3), minmax(0, 1fr)); gap: var(--bx-gap); }
+@media (max-width: 1024px) { .bx-products { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .bx-products { grid-template-columns: 1fr; } }
+.bx-product__media { aspect-ratio: 1; object-fit: cover; width: 100%; transition: transform 0.4s ease; }
+.bx-product:hover .bx-product__media { transform: scale(1.04); }
+.bx-product__price { font-weight: 700; color: var(--bx-primary); }
+
+.bx-map { width: 100%; border: 0; border-radius: var(--bx-radius); aspect-ratio: var(--bx-map-ratio, 16 / 9); }
+
+.bx-contact__list { display: flex; flex-direction: column; gap: 14px; list-style: none; padding: 0; margin: 0; }
+.bx-contact__item { display: flex; gap: 12px; align-items: flex-start; }
+.bx-contact__item i { color: var(--bx-icon); width: 20px; text-align: center; margin-top: 3px; }
+.bx-contact__item a { color: var(--bx-primary); }
+
+/* An editor-only notice — feature blocks that can't safely run inside the
+   builder (payment forms, live carts) render this instead. */
+.bx-editor-note {
+  border: 1px dashed var(--bx-border);
+  border-radius: var(--bx-radius);
+  padding: 24px;
+  text-align: center;
+  color: var(--bx-text-muted);
+  background: var(--bx-surface);
+  font-size: 0.9rem;
+}
+
+/* Raw HTML block — user markup renders verbatim inside this wrapper. */
+.bx-html > :first-child { margin-top: 0; }
+.bx-html > :last-child { margin-bottom: 0; }
+
+/* ═══ CANVAS OVERRIDES ════════════════════════════════════════════════════
+   Applied only inside the builder iframe (see CanvasFrame). A sticky or fixed
+   site header inside the canvas covers the top edge of the block beneath it —
+   which is exactly where the per-block toolbar lives — making blocks
+   impossible to select or delete. Same for transformed ancestors, which
+   silently break position:fixed for everything inside them. */
+.bx-canvas :where(header, .bx-sticky, [style*='position: sticky'], [style*='position:sticky']) {
+  position: static !important;
+}
+.bx-canvas :where(*) { animation: none !important; }
+
+/* ⚠️ PER-PROJECT — this design's stylesheet is really two files concatenated
+   into one (its own header comment: "Home: prefixed home.css under body.home
+   so the mockup does not fight inner-page rules"). Home's embedded reset,
+   `body.home a { color: inherit }`, has the SAME specificity as `.site-nav a`
+   and comes later in that combined file, so on the home page every nav link
+   quietly inherits the page's default (dark) text colour instead of white —
+   correct on every other page, broken only on home.
+
+   `.site-nav a[aria-current="page"]` is unaffected already: an attribute
+   selector outranks a bare `a`, which is why "current page" already showed
+   gold. Only the non-current links were losing their colour.
+
+   Fixed by outranking the reset with one more class in the selector, not by
+   editing the imported stylesheet. Loads before site_custom_css, but higher
+   specificity wins regardless of order — and it ties (not beats) the design's
+   own hover/current-page rules, so those still take over correctly since they
+   load later. Re-check this if the design's header markup changes. */
+.site-header .site-nav a {
+  color: rgba(255, 255, 255, 0.82);
+}

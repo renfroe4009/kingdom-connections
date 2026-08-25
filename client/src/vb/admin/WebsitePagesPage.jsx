@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../api/client.js';
 import PageHeader from '../../components/PageHeader.jsx';
-import { PAGE_TEMPLATES } from '../builder/pageTemplates.js';
+import { PAGE_TEMPLATES, buildTemplate } from '../../builder/templates/pageTemplates.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
@@ -200,7 +200,9 @@ function TemplatePickerModal({ onClose, onPick }) {
     if (!selected || !title.trim()) return;
     setCreating(true);
     try {
-      await onPick(title, slug || toSlug(title), selected.puck_data);
+      // Craft templates build their tree on demand; the old Puck templates
+      // carried a static `puck_data` blob. Same destination column, new shape.
+      await onPick(title, slug || toSlug(title), buildTemplate(selected.id));
     } finally {
       setCreating(false);
     }
