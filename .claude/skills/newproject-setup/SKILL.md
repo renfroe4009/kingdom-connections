@@ -192,6 +192,29 @@ What comes back drives every remaining phase. Three findings matter most:
    really is `display: grid`/`flex` and the nav links have their padding and
    colour. Unstyled inline links look like a spacing bug, not a missing rule.
 
+   **Check the mobile toggle button's actual position, not just that it's
+   visible.** On the `.ns-grid`/`.ns-block` contract, a header's `.ns-block`s
+   only get their `--col-start`/`--col-span` placement above 768px — below
+   that they fall back to the design's own `.ns-block { grid-column: 1/-1 }`,
+   so two blocks (brand, nav/actions) stack into two grid rows instead of
+   sitting side by side. A header with a *fixed* height and no
+   `overflow: hidden` doesn't clip that second row — it visually spills out
+   beneath the navy bar and lands on whatever content follows, looking like a
+   stray hamburger icon floating over the hero image rather than a header
+   control. `margin-left: auto` on the toggle button (routine in these
+   designs) makes this worse, not better, by doing *nothing*: it only pushes
+   within a flex parent, and both `.ns-grid` (grid, not flex) and whatever
+   wrapper holds the toggle are usually neither.
+
+   Site-wide fix, not a one-off: make the header row `display: flex` at every
+   width instead of depending on the grid fallback (`grid-column` is a no-op
+   on a flex item, so this doesn't fight the design's own box-model
+   properties on `.ns-grid` — max-width/padding/centering survive). Verify
+   with `getBoundingClientRect()` on the toggle button at mobile width:
+   `top`/`bottom` must fall inside the header's own box, and `right` should
+   sit near the viewport edge — "the icon is visible somewhere on the page"
+   is not evidence it's in the header.
+
    **Do this for the footer too — it is not automatically covered by fixing
    the header.** The same design shipped a *second* two-implementation split
    here: home's footer was `.site-footer__grid` (CSS grid) / `.site-footer__links`

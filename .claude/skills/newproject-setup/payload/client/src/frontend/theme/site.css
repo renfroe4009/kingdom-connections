@@ -456,3 +456,40 @@
 .site-header .site-nav a {
   color: rgba(255, 255, 255, 0.82);
 }
+
+/* ⚠️ PER-PROJECT — the header's two `.ns-block`s (brand, nav/actions) rely on
+   the design's generic 12-column grid placement (`--col-start`/`--col-span`),
+   which only applies at `min-width: 768px`. Below that the design's own base
+   rule (`.ns-block { grid-column: 1 / -1 }`) makes each block full-width, so
+   they stack into two grid rows instead of sitting side by side. The header
+   has a fixed height (`--header-h`) and no `overflow: hidden`, so that second
+   row — the mobile-nav toggle button — visually spills out beneath the navy
+   bar and lands on top of whatever content follows, looking like a stray
+   hamburger icon floating over the hero image instead of a header control.
+
+   `.nav-toggle { margin-left: auto }` in the design's own stylesheet also
+   silently does nothing: it only pushes an element within a FLEX parent, and
+   neither `.ns-grid` (display: grid) nor `.nav__actions` (not a design class
+   at all — a wrapper this app adds, with no rules of its own) is one.
+
+   Fixed by making the header row flex at every width instead of depending on
+   the grid fallback: `grid-column` is a no-op on a flex item, so this simply
+   overrides the layout axis without touching the design's own box-model
+   properties (`.ns-grid` keeps its max-width/padding/centering either way).
+   Re-check this if the header ever gains a third `.ns-block`. */
+.site-header .ns-grid {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+}
+.site-header .ns-grid > .ns-block:last-child {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 16px);
+}
+.nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
