@@ -207,8 +207,12 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
     padding-right: 0.5rem;
   }
 
-  /* Ensure main content has reasonable padding */
-  main {
+  /* Ensure main content has reasonable padding.
+     Scoped to the admin shell — bare `main {}` also matched
+     PublicLayout.jsx's <main id="main-content">, adding an unwanted gap
+     above the hero on every public page below 991.98px. #main-wrapper is
+     AppLayout.jsx's own root, same as the sidebar rules just above. */
+  #main-wrapper main {
     padding: 16px 4px !important;
   }
 
