@@ -222,8 +222,13 @@ export default function PublicFormEmbed({ formSlug, textColor, initialValues = {
     </div>
   );
 
+  // A submit_class means the site's own CSS owns the button's look — same
+  // "imported class wins over the default" convention the builder blocks use
+  // elsewhere, so the default background/padding/etc. don't fight it.
+  const hasCustomButtonClass = Boolean(form.submit_class);
+
   return (
-    <form onSubmit={submit} noValidate>
+    <form id={form.html_id || undefined} className={form.css_class || undefined} onSubmit={submit} noValidate>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
         {(form.fields || []).filter(f => isVisible(f, values)).map(field => {
           const isLayout = LAYOUT_TYPES.has(field.field_type);
@@ -236,8 +241,15 @@ export default function PublicFormEmbed({ formSlug, textColor, initialValues = {
       </div>
       {error && <p style={{ color: '#dc3545', fontSize: '0.85rem', margin: '0.75rem 0 0' }}>{error}</p>}
       <div style={{ marginTop: '1.25rem' }}>
-        <button type="submit" disabled={submitting}
-          style={{ background: 'var(--brand-primary, #cc1122)', color: '#fff', border: 'none', borderRadius: 6, padding: '0.65rem 2rem', fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', opacity: submitting ? 0.7 : 1 }}>
+        <button
+          type="submit"
+          disabled={submitting}
+          className={form.submit_class || undefined}
+          style={hasCustomButtonClass ? undefined : {
+            background: 'var(--brand-primary, #cc1122)', color: '#fff', border: 'none', borderRadius: 6,
+            padding: '0.65rem 2rem', fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', opacity: submitting ? 0.7 : 1,
+          }}
+        >
           {submitting ? 'Sending…' : (form.submit_text || 'Submit')}
         </button>
       </div>
