@@ -25,6 +25,7 @@ import FormEmbed from './FormEmbed.jsx';
 import ProductList from './ProductList.jsx';
 import ProductDetail from './ProductDetail.jsx';
 import DonationBlock from './DonationBlock.jsx';
+import MembershipBlock from './MembershipBlock.jsx';
 import { ContactDetails, MapBlock } from './ContactSection.jsx';
 
 export const NODES = {
@@ -51,6 +52,7 @@ export const NODES = {
   ProductList,
   ProductDetail,
   DonationBlock,
+  MembershipBlock,
   ContactDetails,
   MapBlock,
 };
@@ -79,6 +81,7 @@ export {
   ProductList,
   ProductDetail,
   DonationBlock,
+  MembershipBlock,
   ContactDetails,
   MapBlock,
 };
@@ -150,6 +153,7 @@ export const TOOLBOX = [
       { key: 'ProductList', label: 'Shop Listing', icon: 'fa-solid fa-bag-shopping', element: <Element is={ProductList} /> },
       { key: 'ProductDetail', label: 'Product', icon: 'fa-solid fa-tag', element: <Element is={ProductDetail} /> },
       { key: 'DonationBlock', label: 'Donation / Payment', icon: 'fa-solid fa-hand-holding-dollar', element: <Element is={DonationBlock} /> },
+      { key: 'MembershipBlock', label: 'Membership', icon: 'fa-solid fa-id-card', element: <Element is={MembershipBlock} /> },
       { key: 'ContactDetails', label: 'Contact Details', icon: 'fa-solid fa-address-card', element: <Element is={ContactDetails} /> },
       { key: 'MapBlock', label: 'Map', icon: 'fa-solid fa-map-location-dot', element: <Element is={MapBlock} /> },
     ],
