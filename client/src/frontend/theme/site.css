@@ -457,6 +457,49 @@
   color: rgba(255, 255, 255, 0.82);
 }
 
+/* ⚠️ PER-PROJECT — the "Join Now" CTA is an `<a class="btn btn--join">` sitting
+   inside `.site-nav`, so the design's generic nav-link rule (`.site-nav a`,
+   specificity 0,1,1) outranks the button's own `.btn--join` (0,1,0) and
+   overwrites the four properties that make it a button: it flattens the pill
+   to `--radius-sm`, swaps the dark-on-gold label for translucent white, and
+   resets the padding and type. The home page escapes this only because that
+   page's rules are prefixed `body.home .btn--join` (0,2,0), which does outrank
+   the nav rule — which is why the CTA looked right on `/` and wrong on every
+   other page.
+
+   Hover was worse than cosmetic: `.site-nav a:hover` (0,2,1) beat
+   `.btn--join:hover` (0,2,0) and set the label to `--color-accent`, i.e. gold
+   text on the gold button — the label vanished on hover on every inner page.
+
+   The design defines this button twice — base `.btn--join` (from styles.css)
+   and `body.home .btn--join` (from home.css) — differing only in shade
+   (`--color-primary` #0a1230 vs `--navy` #050a1a) and 0.1rem of padding.
+   Values below deliberately mirror the HOME pair, because this rule outranks
+   both: taking the base pair instead would have nudged the home button too,
+   and home is the reference the rest of the site is being matched to. The
+   `--navy` fallback keeps this sane if that raw token is ever dropped.
+
+   `min-height` is deliberately NOT pinned to home's 38px — inner pages keep
+   the shared `.btn` 44px, which is the accessible tap target. The extra 6px
+   doesn't change the pill's character.
+
+   `.site-header .site-nav a.btn--join` is (0,3,1), which clears the nav rule
+   and the `.site-header`-scoped colour fix above it. The design's own
+   `.site-nav a.btn--join[aria-current="page"]` is also (0,3,1) and loads later
+   (site_custom_css follows this file), so the current-page colour still wins
+   the tie — both are the same dark navy, so they agree anyway. */
+.site-header .site-nav a.btn--join {
+  color: var(--navy, var(--color-primary));
+  border-radius: var(--radius-pill);
+  padding: 0.55rem 1.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.site-header .site-nav a.btn--join:hover {
+  color: var(--navy, var(--color-primary));
+}
+
 /* ⚠️ PER-PROJECT — the header's two `.ns-block`s (brand, nav/actions) rely on
    the design's generic 12-column grid placement (`--col-start`/`--col-span`),
    which only applies at `min-width: 768px`. Below that the design's own base
