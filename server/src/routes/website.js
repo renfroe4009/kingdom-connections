@@ -201,7 +201,7 @@ router.get('/public-settings', async (req, res) => {
     const JSON_FIELDS = new Set([
       'header_nav_links', 'header_cta_buttons',
       'footer_col2_links', 'footer_col3_links', 'footer_col4_links',
-      'footer_cta_buttons',
+      'footer_cta_buttons', 'footer_legal_links',
     ]);
     const overrides = {};
     rows.forEach((r) => {
