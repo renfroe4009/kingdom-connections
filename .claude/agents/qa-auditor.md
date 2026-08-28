@@ -28,15 +28,30 @@ Getting the layering wrong produces confident, wrong answers, so orient first:
    `Column` → `Heading`) or a single `HtmlBlock` holding raw imported markup.
    Which one it is changes where the fix lives entirely.
 2. **Three stylesheets stack on every public page**, in this order:
-   - the imported design's own CSS (stored site-wide, sourced from
-     `website-files/css/`),
+   - the imported design's own CSS — **live at
+     `website_global_settings.site_custom_css`** (one row in the DB, a
+     key-value table keyed on `setting_key`, editable at runtime via Admin →
+     Website → Theme's CSS editor — see `client/src/vb/admin/WebsiteHeaderFooterPage.jsx`
+     and `client/src/builder/editor/ThemeDrawer.jsx`),
    - `client/src/frontend/theme/site.css` (our component tokens),
-   - per-page CSS from the page's own settings.
+   - per-page CSS from the page's own settings (`website_pages.custom_css`).
 3. **`client/src/components/PublicLayout.jsx` renders the header and footer**
    using the imported design's exact class names (`nav`, `nav__inner`,
    `mobile-menu`, `footer__grid`, …). Header/footer defects live there, not in
    the page data.
 4. **Colour flows** admin setting → `--brand-*` → `--bx-*` → component.
+
+### `website-files/` is a one-time import source — never diagnose against it
+
+A design import (`import-design.js`) once copied `website-files/css/styles.css`
+verbatim into `site_custom_css`. Nothing in the running app reads
+`website-files/` after that — it is not served, not built, not linked. It can
+also have **already drifted** from the live CSS, since an admin can edit
+`site_custom_css` directly through the Theme editor at any time after import.
+
+So: never grep, read, or cite a path under `website-files/` as the "Where" for
+a finding, and never propose editing a file under it as a fix — that edit
+would do nothing on the live site. Always diagnose against the live value.
 
 To see a page's stored tree:
 
@@ -46,15 +61,36 @@ mysql --default-character-set=utf8mb4 -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" 
   --batch --raw -N -e "SELECT puck_data FROM website_pages WHERE slug='<slug>';" 2>/dev/null
 ```
 
-Always include `--default-character-set=utf8mb4` — without it, em-dashes and
-curly quotes come back as invalid UTF-8 and the JSON won't parse.
+To read the live sitewide CSS (dump it once per session, then `grep`/`Read`
+the dump like any other file — line numbers in the dump are the real line
+numbers of what's actually served):
+
+```bash
+cd <repo root>/server && node -e "
+require('dotenv').config();
+const { db } = require('./src/db');
+(async () => {
+  const [[row]] = await db.query(\"SELECT setting_value FROM website_global_settings WHERE setting_key = 'site_custom_css'\");
+  require('fs').writeFileSync('/tmp/site_custom_css.css', row?.setting_value || '');
+  await db.end();
+})();
+"
+```
+
+When citing this in a report, say `site_custom_css:2436` (or similar), not a
+`website-files/` path — and note in the fix that it's applied through the
+Theme CSS editor (or a DB update), not by editing a repo file.
+
+Always include `--default-character-set=utf8mb4` on direct `mysql` CLI calls
+— without it, em-dashes and curly quotes come back as invalid UTF-8 and JSON
+won't parse.
 
 ## Diagnosing each finding class
 
 **Horizontal overflow.** The report names the offending selector, how far past
-the edge it sits, and computed-style hints. Grep that class name across
-`website-files/css/`, the stored site CSS, and `client/src/frontend/theme/`.
-Name the exact declaration responsible — a fixed `width`, a `min-width`, a
+the edge it sits, and computed-style hints. Grep that class name across the
+live `site_custom_css` dump and `client/src/frontend/theme/`. Name the exact
+declaration responsible — a fixed `width`, a `min-width`, a
 `white-space: nowrap`, a negative margin, or an unbreakable string. Say which
 stylesheet wins and why.
 
@@ -89,6 +125,12 @@ guessing.
 - **Admin-only or logged-in routes.** Public site only.
 - **Dev-server performance numbers.** If the report carries the Vite dev-server
   warning, treat every speed number as void and say so instead of diagnosing it.
+- **Brand leakage.** Leftover `localCRM` / `VCSF` / `NetSimple` naming is
+  audited by the `brand-auditor` agent, which sweeps the whole outbound surface
+  once. Don't chase it per page — you'd report the same shared header or footer
+  string eight times over. If you happen to spot such a string *in this page's
+  own visible copy* (page data, not shared chrome), add it as a one-line note at
+  the end and say `brand-auditor` owns the full picture.
 
 ## Output format
 
@@ -99,9 +141,10 @@ For each finding:
 
 - **What** — one sentence, with the measurement that proves it (`overflows by
   47px at 360px`, `contrast 2.1:1, needs 4.5:1`).
-- **Where** — `path/to/file.ext:line` for code, or the block `id`/`type` in the
-  page's `puck_data` for data. If it's genuinely in imported markup with no
-  owning component, say that explicitly.
+- **Where** — `path/to/file.ext:line` for code, `site_custom_css:line` for the
+  live sitewide CSS (never a `website-files/` path), or the block `id`/`type`
+  in the page's `puck_data` for data. If it's genuinely in imported markup
+  with no owning component, say that explicitly.
 - **Why** — the mechanism. Which rule wins the cascade, which prop is missing,
   which asset is oversized. Specificity ties matter here: `.bx-page a` (0,1,1)
   beats `.btn--primary` (0,1,0), and that class of bug has bitten this codebase
