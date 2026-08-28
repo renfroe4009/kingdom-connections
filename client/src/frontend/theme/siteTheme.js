@@ -50,6 +50,7 @@ export const THEME_DEFAULTS = {
   footer_col4_title: '',
   footer_col4_links: [],
   footer_cta_buttons: [],
+  footer_legal_links: [],
   header_nav_links: [],
   header_cta_buttons: [],
   header_show_cart: 'true',
