@@ -87,6 +87,10 @@ async function discoverPages(page) {
   if (args.pages) return String(args.pages).split(',').map((p) => p.trim()).filter(Boolean).map(normalisePath);
 
   await page.goto(BASE, { waitUntil: 'load', timeout: 60_000 });
+  // Same settle as every other navigation below — nav/footer are client-rendered
+  // from the API after `load` fires, so reading links immediately catches the
+  // pre-data skeleton (no nav yet) and silently discovers only "/".
+  await page.waitForTimeout(SETTLE_MS);
   const hrefs = await page.evaluate(() => Array.from(document.querySelectorAll('a[href]'))
     .map((a) => a.getAttribute('href') || ''));
 
