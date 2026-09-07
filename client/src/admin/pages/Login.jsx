@@ -51,10 +51,9 @@ export default function Login() {
       <div className="card shadow-lg" style={{ width: 420, maxWidth: '94vw' }}>
         <div className="card-body p-4">
 
-          {/* Brand + phase */}
+          {/* Brand */}
           <div className="d-flex flex-column align-items-center mb-4">
             <BrandMark size="lg" />
-            <p className="text-muted mb-0 mt-2 small text-center">Phase 2 — Maps, Payments &amp; Portal</p>
           </div>
 
           {/* ── LOGIN FORM ── */}
