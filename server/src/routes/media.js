@@ -78,6 +78,11 @@ async function processAndStore(file, req) {
   };
 }
 
+// Media-library keys are always shaped by buildKey() in services/storage.js:
+// entity_type/entity_id/YYYY-MM-DD/<40 hex><ext>. Anything else was never
+// produced by this app's own upload flow.
+const KEY_RE = /^[a-z0-9_-]+\/[a-z0-9_-]+\/\d{4}-\d{2}-\d{2}\/[a-f0-9]{40}(\.[a-z0-9]{1,8})?$/i;
+
 // ── GET /file/* ─── public read for media library files ─────────────────────
 // Unauthenticated on purpose — media library assets (page/blog images) are
 // meant to render on public pages via plain <img src>. Only reachable path
@@ -86,13 +91,25 @@ async function processAndStore(file, req) {
 router.get('/file/*', async (req, res) => {
   try {
     const key = req.params[0];
+    // Reject anything not shaped like a real generated key before it ever
+    // reaches the filesystem layer (defense in depth on top of storage.js's
+    // own path-containment check).
+    if (!KEY_RE.test(key)) return res.status(400).end();
+    // Only ever serve keys this app itself registered in the media library —
+    // removes attacker control over the path entirely, regardless of shape.
+    const [[registered]] = await db.query(
+      'SELECT id FROM media_files WHERE filename = :key LIMIT 1',
+      { key }
+    );
+    if (!registered) return res.status(404).end();
+
     const got = await storage.getReadable({ driver: storage.driver, key });
     if (got.type === 'redirect') return res.redirect(got.url);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     got.stream.on('error', () => res.status(404).end());
     got.stream.pipe(res);
-  } catch (_e) {
-    res.status(404).end();
+  } catch (err) {
+    res.status(err?.status || 404).end();
   }
 });
 

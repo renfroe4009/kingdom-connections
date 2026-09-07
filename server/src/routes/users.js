@@ -10,6 +10,43 @@ const { resolveOwnerScope } = require('../services/scope');
 
 router.use(requireAuth);
 
+// Grantable-role allowlist (security remediation C-03) — a caller may only
+// assign a role whose permissions are a strict subset of permissions they
+// already hold. Admins bypass this (they hold everything by definition via
+// the name-based check in middleware/auth.js). Without this, any
+// `users.manage` holder could assign themselves — or a new account — a role
+// carrying permissions they don't have, e.g. the admin role itself.
+async function assertGrantableRoles(user, roleIds) {
+  if (!roleIds || !roleIds.length) return;
+  if (user.roles?.includes('admin')) return;
+  const [rows] = await db.query(
+    `SELECT DISTINCT p.\`key\`
+       FROM role_permissions rp
+       JOIN permissions p ON p.id = rp.permission_id
+      WHERE rp.role_id IN (:roleIds)`,
+    { roleIds }
+  );
+  const have = new Set(user.permissions || []);
+  const missing = rows.map((r) => r.key).filter((k) => !have.has(k));
+  if (missing.length) {
+    throw Object.assign(
+      new Error(`Cannot assign a role granting permissions you do not hold: ${missing.join(', ')}`),
+      { status: 403 }
+    );
+  }
+  // Also refuse assigning the admin role itself (its bypass in
+  // requirePermission() means "holds every permission", which the
+  // subset check above can't fully capture since new permissions can be
+  // added later without a matching role_permissions row for admin).
+  const [adminRoles] = await db.query(
+    `SELECT id FROM roles WHERE id IN (:roleIds) AND name = 'admin'`,
+    { roleIds }
+  );
+  if (adminRoles.length) {
+    throw Object.assign(new Error('Only an administrator can grant the admin role'), { status: 403 });
+  }
+}
+
 router.get('/', requirePermission('users.manage'), async (req, res, next) => {
   try {
     // Admins see all users. Managers see only themselves + their direct/indirect reports.
@@ -112,6 +149,7 @@ router.post('/', requirePermission('users.manage'), async (req, res, next) => {
     if (!data.manager_id && (roles.includes('sales_manager') || roles.includes('manager'))) {
       data.manager_id = req.user.id;
     }
+    await assertGrantableRoles(req.user, data.role_ids);
     const password_hash = await bcrypt.hash(data.password, 10);
     const [ins] = await db.query(
       `INSERT INTO users (email, password_hash, first_name, last_name, phone, manager_id)
@@ -147,6 +185,13 @@ router.put('/:id', requirePermission('users.manage'), async (req, res, next) => 
     if (scopeIds !== null && !scopeIds.includes(id)) {
       return res.status(403).json({ error: 'Outside your management scope' });
     }
+    // No self-role-modification, ever (security remediation C-03) — scope
+    // checks above always include the caller's own id, so without this a
+    // manager could grant themselves any role in one request.
+    if (data.role_ids && id === req.user.id) {
+      return res.status(403).json({ error: 'You cannot change your own roles.' });
+    }
+    await assertGrantableRoles(req.user, data.role_ids);
     const fields = [];
     const params = { id };
     for (const k of ['first_name', 'last_name', 'phone', 'is_active', 'manager_id', 'cw_member_id']) {

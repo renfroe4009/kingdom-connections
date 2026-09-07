@@ -34,18 +34,32 @@ function buildKey({ entity_type, entity_id, originalName }) {
 }
 
 // ---------- LOCAL DRIVER ----------
+// Resolves `key` under LOCAL_ROOT and refuses anything that would escape it
+// (traversal sequences, absolute-path keys, symlink-free `..` segments).
+// path.relative is the reliable containment test here — path.join alone
+// happily walks a `../../etc/passwd`-shaped key straight out of LOCAL_ROOT.
+function safeLocalPath(key) {
+  if (typeof key !== 'string' || !key) {
+    throw Object.assign(new Error('Invalid storage key'), { status: 400 });
+  }
+  const dest = path.resolve(LOCAL_ROOT, key);
+  const rel = path.relative(LOCAL_ROOT, dest);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw Object.assign(new Error('Invalid storage key'), { status: 400 });
+  }
+  return dest;
+}
+
 async function localPut({ key, buffer }) {
-  const dest = path.join(LOCAL_ROOT, key);
+  const dest = safeLocalPath(key);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(dest, buffer);
 }
 function localStream(key) {
-  const dest = path.join(LOCAL_ROOT, key);
-  return fs.createReadStream(dest);
+  return fs.createReadStream(safeLocalPath(key));
 }
 async function localDelete(key) {
-  const dest = path.join(LOCAL_ROOT, key);
-  try { fs.unlinkSync(dest); } catch (_e) { /* ignore missing */ }
+  try { fs.unlinkSync(safeLocalPath(key)); } catch (_e) { /* ignore missing or invalid */ }
 }
 
 // ---------- S3 DRIVER (lazy-loaded) ----------

@@ -142,8 +142,13 @@ router.get('/public/invoice/:id', async (req, res, next) => {
     const [lines] = await db.query(
       'SELECT id, description, quantity, unit_price, amount FROM invoice_line_items WHERE invoice_id = :id ORDER BY sort_order, id',
       { id });
+    // receipt_token is deliberately NOT selected here (C-01 fix, 2026 security
+    // remediation) — this route has no proof the caller owns the invoice
+    // (unauthenticated, sequential id), and the token is a capability that
+    // unlocks the full receipt payload (PII + card last4) elsewhere. Callers
+    // who need the receipt must already hold the token via /by-token/:token.
     const [[latestPayment]] = await db.query(
-      `SELECT id, amount, status, received_at, created_at, receipt_token
+      `SELECT id, amount, status, received_at, created_at
          FROM payments
         WHERE invoice_id = :id
           AND status IS NOT NULL

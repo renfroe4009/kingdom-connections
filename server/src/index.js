@@ -10,6 +10,20 @@ const morgan = require('morgan');
 const { db, pingDb } = require('./db');
 const errorHandler = require('./middleware/errorHandler');
 
+// Refuse to boot with NODE_ENV misconfigured on a real deployment (security
+// remediation M-01) — the error handler only hides stack traces and returns
+// a generic message for 5xx when NODE_ENV === 'production'. RAILWAY_ENVIRONMENT
+// is set automatically by Railway on every deployment, so its presence is a
+// reliable "this isn't someone's laptop" signal without touching local dev,
+// which has neither this var nor a committed NODE_ENV=production.
+if (process.env.RAILWAY_ENVIRONMENT && process.env.NODE_ENV !== 'production') {
+  throw new Error(
+    `Refusing to start: running on Railway (RAILWAY_ENVIRONMENT=${process.env.RAILWAY_ENVIRONMENT}) ` +
+    `with NODE_ENV=${process.env.NODE_ENV || '(unset)'}. Set NODE_ENV=production in this environment's ` +
+    `variables before deploying — otherwise error responses leak stack traces to clients.`
+  );
+}
+
 // Routers
 const authRoutes          = require('./routes/auth');
 const usersRoutes         = require('./routes/users');

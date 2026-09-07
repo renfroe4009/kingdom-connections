@@ -11,10 +11,31 @@ const { streamChat, loadKnowledge, getSettings } = require('../services/ai');
 
 router.use(requireAuth);
 
+// Interim authorization gate (Phase 0 of the 2026 security remediation —
+// see Security Review/SECURITY-AUDIT-2026-08-21.md finding C-02). The tool
+// executor behind this endpoint runs ~24 database tools with no per-tool
+// permission or row-scope check of its own; the full fix (a TOOL_POLICY map
+// enforced in services/ai.js) lands in Phase 1. Until then, this closes the
+// worst exploitation path — a portal customer using the assistant to read
+// organisation-wide financials they have no access to anywhere else in the
+// app — without disabling the feature for the staff who use it daily.
+// `contacts.read` is held by every staff role (admin/manager/sales/readonly)
+// and by no portal account, so it doubles as a floor check independent of
+// the role-name block below.
+function requireStaffAccess(req, res, next) {
+  if (req.user.roles?.includes('portal')) {
+    return res.status(403).json({ error: 'The assistant is not available for this account.' });
+  }
+  if (!req.user.roles?.includes('admin') && !req.user.permissions?.includes('contacts.read')) {
+    return res.status(403).json({ error: 'The assistant is not available for this account.' });
+  }
+  next();
+}
+
 // ── POST /api/ai/chat ─────────────────────────────────────────────────────────
 // Body: { messages: [{role, content}], module?: string }
 // Returns an SSE stream of { text } chunks, ending with [DONE].
-router.post('/chat', async (req, res, next) => {
+router.post('/chat', requireStaffAccess, async (req, res, next) => {
   try {
     const { messages, module } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {
