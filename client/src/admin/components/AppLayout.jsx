@@ -393,13 +393,23 @@ export default function AppLayout() {
         <div className="body-wrapper">
           <div className="container-fluid mw-100">
             <header className="topbar sticky-top" style={{ borderBottom: '1px solid var(--border-warm)' }}>
-              <nav className="navbar p-2 d-flex align-items-center gap-3">
+              {/* flexWrap: 'nowrap' is required here — Bootstrap's .d-flex on <nav>
+                  allows wrapping by default, and once the hamburger/brand became
+                  visible up to 1300px (below) alongside the module switcher (visible
+                  from 992px), there wasn't always room for both plus AI Assistant/
+                  theme/user on one line, so the whole bar wrapped to a second row
+                  at common laptop/tablet widths (e.g. 1024px). The module switcher
+                  is the one flexible child (flex-grow-1 + minWidth:0 + its own
+                  horizontal scroll/slider below) — everything else here must stay
+                  flex-shrink:0 so 100% of any squeeze lands on the scrollable tab
+                  strip instead of the bar wrapping or those controls compressing. */}
+              <nav className="navbar p-2 d-flex align-items-center gap-3" style={{ flexWrap: 'nowrap' }}>
                 {/* Left: hamburger + brand. Visible throughout the whole "sidebar is a
                     slide-out drawer" range (<1300px, see .d-1300-none / the vendor
                     theme's own sidebar breakpoint in styles.css) — not just below
                     Bootstrap's lg (992px), so there's no dead zone on laptop widths
                     where the sidebar is hidden but nothing can open it. */}
-                <ul className="navbar-nav d-flex flex-row align-items-center gap-2 mb-0">
+                <ul className="navbar-nav d-flex flex-row align-items-center gap-2 mb-0" style={{ flexShrink: 0 }}>
                   <li className="nav-item d-1300-none">
                     <button
                       className="btn btn-light btn-sm border d-flex align-items-center justify-content-center"
@@ -486,7 +496,7 @@ export default function AppLayout() {
                 </div>
 
                 {/* Right: always-visible controls */}
-                <ul className="navbar-nav flex-row align-items-center gap-2 ms-auto mb-0">
+                <ul className="navbar-nav flex-row align-items-center gap-2 ms-auto mb-0" style={{ flexShrink: 0 }}>
                   <li className="nav-item">
                     <button
                       className="btn btn-primary btn-sm d-flex align-items-center gap-1 px-3"
