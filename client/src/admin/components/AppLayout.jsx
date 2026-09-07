@@ -218,6 +218,8 @@ export default function AppLayout() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const moduleScrollRef = useRef(null);
+  const [moduleScroll, setModuleScroll] = useState({ canLeft: false, canRight: false });
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const activeSectionKey = matchSection(location.pathname);
@@ -232,6 +234,37 @@ export default function AppLayout() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Top-bar module switcher scrolls horizontally rather than wrapping (so it
+  // stays on the same row as AI Assistant/theme/user no matter how many
+  // modules exist), but a bare overflow-x:auto with a hidden scrollbar gives
+  // a mouse user no way to tell more tabs exist off-screen or reach them —
+  // so it doubles as a real slider with arrow buttons that only render when
+  // there's actually something to scroll to.
+  function updateModuleScroll() {
+    const el = moduleScrollRef.current;
+    if (!el) return;
+    setModuleScroll({
+      canLeft: el.scrollLeft > 4,
+      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+    });
+  }
+  useEffect(() => {
+    updateModuleScroll();
+    const el = moduleScrollRef.current;
+    if (!el) return undefined;
+    const onScroll = () => updateModuleScroll();
+    const onResize = () => updateModuleScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onResize);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [activeSectionKey]);
+  function scrollModules(dir) {
+    moduleScrollRef.current?.scrollBy({ left: dir * 220, behavior: 'smooth' });
+  }
 
   function closeSidebar() { setSidebarOpen(false); }
 
@@ -389,38 +422,67 @@ export default function AppLayout() {
                     later (Membership, Volunteer, Golf, ...) never breaks the layout —
                     `minWidth: 0` is required on this flex child so it can actually
                     shrink below its content width and hand overflow to the scrollbar
-                    instead of pushing the right-side controls off-screen. */}
-                <div
-                  className="d-none d-lg-flex align-items-center gap-2 flex-grow-1 module-switcher-scroll"
-                  style={{ overflowX: 'auto', flexWrap: 'nowrap', minWidth: 0, WebkitOverflowScrolling: 'touch' }}
-                >
-                  {SECTIONS.map((s) => {
-                    const active = s.key === activeSectionKey;
-                    return (
-                      <button
-                        key={s.key}
-                        type="button"
-                        // Below 1300px the sidebar is a slide-out drawer, not pinned
-                        // (see styles.css), so there's nowhere else to see this
-                        // module's sub-items after navigating — open the drawer too.
-                        // No-op above 1300px: the drawer CSS doesn't apply there.
-                        onClick={() => { navigate(firstPath(s)); setSidebarOpen(true); }}
-                        className="btn btn-sm d-flex align-items-center gap-2 flex-shrink-0"
-                        style={{
-                          borderRadius: 20,
-                          padding: '6px 16px',
-                          fontWeight: 600,
-                          whiteSpace: 'nowrap',
-                          border: active ? 'none' : '1px solid var(--border-warm)',
-                          background: active ? 'var(--bs-dark, #111)' : 'transparent',
-                          color: active ? '#fff' : 'inherit',
-                        }}
-                      >
-                        <iconify-icon icon={s.icon} class="fs-6"></iconify-icon>
-                        {s.label}
-                      </button>
-                    );
-                  })}
+                    instead of pushing the right-side controls off-screen. Doubles as
+                    a real slider: arrow buttons (only rendered when there's actually
+                    more to scroll to) give a mouse user a visible, clickable way to
+                    reach off-screen tabs instead of relying on an invisible-scrollbar
+                    swipe/shift-wheel gesture. */}
+                <div className="d-none d-lg-flex align-items-center gap-1 flex-grow-1" style={{ minWidth: 0 }}>
+                  {moduleScroll.canLeft && (
+                    <button
+                      type="button"
+                      onClick={() => scrollModules(-1)}
+                      className="btn btn-light btn-sm border d-flex align-items-center justify-content-center flex-shrink-0"
+                      style={{ width: 30, height: 30, borderRadius: '50%', padding: 0 }}
+                      aria-label="Scroll modules left"
+                    >
+                      <iconify-icon icon="solar:alt-arrow-left-line-duotone" class="fs-6"></iconify-icon>
+                    </button>
+                  )}
+                  <div
+                    ref={moduleScrollRef}
+                    className="d-flex align-items-center gap-2 module-switcher-scroll"
+                    style={{ overflowX: 'auto', flexWrap: 'nowrap', minWidth: 0, WebkitOverflowScrolling: 'touch' }}
+                  >
+                    {SECTIONS.map((s) => {
+                      const active = s.key === activeSectionKey;
+                      return (
+                        <button
+                          key={s.key}
+                          type="button"
+                          // Below 1300px the sidebar is a slide-out drawer, not pinned
+                          // (see styles.css), so there's nowhere else to see this
+                          // module's sub-items after navigating — open the drawer too.
+                          // No-op above 1300px: the drawer CSS doesn't apply there.
+                          onClick={() => { navigate(firstPath(s)); setSidebarOpen(true); }}
+                          className="btn btn-sm d-flex align-items-center gap-2 flex-shrink-0"
+                          style={{
+                            borderRadius: 20,
+                            padding: '6px 16px',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                            border: active ? 'none' : '1px solid var(--border-warm)',
+                            background: active ? 'var(--bs-dark, #111)' : 'transparent',
+                            color: active ? '#fff' : 'inherit',
+                          }}
+                        >
+                          <iconify-icon icon={s.icon} class="fs-6"></iconify-icon>
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {moduleScroll.canRight && (
+                    <button
+                      type="button"
+                      onClick={() => scrollModules(1)}
+                      className="btn btn-light btn-sm border d-flex align-items-center justify-content-center flex-shrink-0"
+                      style={{ width: 30, height: 30, borderRadius: '50%', padding: 0 }}
+                      aria-label="Scroll modules right"
+                    >
+                      <iconify-icon icon="solar:alt-arrow-right-line-duotone" class="fs-6"></iconify-icon>
+                    </button>
+                  )}
                 </div>
 
                 {/* Right: always-visible controls */}
