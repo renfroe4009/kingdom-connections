@@ -65,7 +65,7 @@ export default function SubscriptionsList() {
 
   // Client-side required-field check (mirrors server validation)
   function clientValidate(payload) {
-    if (!payload.name) return 'Give this subscription a name.';
+    if (!payload.name) return 'Give this recurring plan a name.';
     if (payload.items.length === 0) return 'Add at least one line item.';
     if (payload.auto_charge && !payload.gateway_profile_id) {
       return 'Select a saved payment method to auto-charge, or turn off auto-charge.';
@@ -112,9 +112,9 @@ export default function SubscriptionsList() {
 
   return (
     <div>
-      <PageHeader title="Subscriptions" subtitle="Recurring billing plans"
+      <PageHeader title="Recurring" subtitle="Recurring billing plans"
         actions={can('subscriptions.write') && <button className="btn btn-primary" onClick={() => { setFormError(''); setShow(true); }}>
-          <iconify-icon icon="solar:add-circle-line-duotone" class="me-1"></iconify-icon> New Subscription
+          <iconify-icon icon="solar:add-circle-line-duotone" class="me-1"></iconify-icon> New Recurring Plan
         </button>} />
 
       <div className="card">
@@ -161,14 +161,14 @@ export default function SubscriptionsList() {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan="8"><div className="empty-state">No subscriptions yet.</div></td></tr>}
+                {rows.length === 0 && <tr><td colSpan="8"><div className="empty-state">No recurring plans yet.</div></td></tr>}
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <Modal show={show} onClose={() => setShow(false)} title="New Subscription" size="lg"
+      <Modal show={show} onClose={() => setShow(false)} title="New Recurring Plan" size="lg"
         footer={<><button className="btn btn-light" onClick={() => setShow(false)}>Cancel</button>
                   <button className="btn btn-primary" onClick={save}>Create</button></>}>
         <FormErrorBanner error={formError} />

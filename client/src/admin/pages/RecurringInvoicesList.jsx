@@ -147,7 +147,7 @@ export default function RecurringInvoicesList() {
 
       <div className="mb-3 d-flex gap-2 align-items-center">
         <Link to="/admin/invoices" className="btn btn-light btn-sm">← All Invoices</Link>
-        <Link to="/admin/subscriptions" className="btn btn-light btn-sm">Subscriptions</Link>
+        <Link to="/admin/subscriptions" className="btn btn-light btn-sm">Recurring</Link>
       </div>
 
       <div className="card">

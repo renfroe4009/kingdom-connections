@@ -143,7 +143,7 @@ export default function MergeModal({ entityType, recordA, recordB, onClose, onMe
       </div>
 
       <div className="alert alert-secondary py-2 small mb-3">
-        Merging moves donations, orders, subscriptions, invoices, tags, and related history from
+        Merging moves donations, orders, recurring plans, invoices, tags, and related history from
         <strong> {displayName(entityType, loser)}</strong> onto the survivor. {loser.id} will be retired, not deleted.
         {loserPreview && (
           <ul className="mb-0 mt-1">

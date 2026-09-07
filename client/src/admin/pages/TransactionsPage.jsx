@@ -279,7 +279,7 @@ export default function TransactionsPage() {
                 <option value="membership">Membership</option>
                 <option value="event">Event</option>
                 <option value="order">Order</option>
-                <option value="subscription">Subscription</option>
+                <option value="subscription">Recurring</option>
                 <option value="recurring_invoice">Recurring Invoice</option>
                 <option value="invoice">Invoice</option>
               </select>

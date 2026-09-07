@@ -4,7 +4,7 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import { useTheme } from '../../theme/ThemeContext.jsx';
 import BrandMark from './BrandMark.jsx';
 import AiAssistant from './AiAssistant.jsx';
-import { ToastHost } from '../../components/Toast.jsx';
+import { ToastHost, toast } from '../../components/Toast.jsx';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { useAdminTheme } from '../../hooks/useAdminTheme.js';
 import { IntegrationsProvider } from '../context/IntegrationsContext.jsx';
@@ -38,7 +38,7 @@ const SECTIONS = [
           { to: '/admin/billing/reconciliation',     label: 'Reconciliation',  icon: 'solar:shield-check-line-duotone',     perm: 'reports.view' },
         ],
       },
-      { to: '/admin/subscriptions', label: 'Subscriptions', icon: 'solar:refresh-circle-line-duotone', perm: 'subscriptions.read' },
+      { to: '/admin/subscriptions', label: 'Recurring', icon: 'solar:refresh-circle-line-duotone', perm: 'subscriptions.read' },
       { to: '/admin/maps',          label: 'Maps',          icon: 'solar:map-point-line-duotone',   perm: 'maps.view' },
       { to: '/admin/tasks',         label: 'Tasks',         icon: 'solar:checklist-minimalistic-line-duotone', perm: 'tasks.read' },
       { to: '/admin/activities',    label: 'Activity',      icon: 'solar:clock-circle-line-duotone' },
@@ -210,7 +210,7 @@ function NavGroup({ item, can }) {
 
 export default function AppLayout() {
   useAdminTheme();
-  const { user, logout, can, impersonating, stopImpersonating } = useAuth();
+  const { user, logout, can, impersonating, stopImpersonating, updateDashboardPreference } = useAuth();
   const { theme, toggleTheme, secondaryColor } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -572,6 +572,49 @@ export default function AppLayout() {
                               ))}
                             </>
                           )}
+                          <li>
+                            <h6 className="dropdown-header text-uppercase small text-muted px-3 pt-2 pb-1 mb-0">
+                              Dashboard View
+                            </h6>
+                          </li>
+                          <li>
+                            <button
+                              type="button"
+                              className="dropdown-item d-flex align-items-center gap-2"
+                              onClick={async () => {
+                                setDropdownOpen(false);
+                                if (user?.default_dashboard === 'sales') {
+                                  try { await updateDashboardPreference('nonprofit'); }
+                                  catch (_e) { toast('Could not update dashboard preference', 'error'); }
+                                }
+                              }}
+                            >
+                              <iconify-icon icon="solar:heart-line-duotone"></iconify-icon>
+                              <span>Nonprofit</span>
+                              {user?.default_dashboard !== 'sales' && (
+                                <iconify-icon icon="solar:check-circle-bold" class="ms-auto text-success"></iconify-icon>
+                              )}
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              type="button"
+                              className="dropdown-item d-flex align-items-center gap-2"
+                              onClick={async () => {
+                                setDropdownOpen(false);
+                                if (user?.default_dashboard !== 'sales') {
+                                  try { await updateDashboardPreference('sales'); }
+                                  catch (_e) { toast('Could not update dashboard preference', 'error'); }
+                                }
+                              }}
+                            >
+                              <iconify-icon icon="solar:chart-2-line-duotone"></iconify-icon>
+                              <span>Sales</span>
+                              {user?.default_dashboard === 'sales' && (
+                                <iconify-icon icon="solar:check-circle-bold" class="ms-auto text-success"></iconify-icon>
+                              )}
+                            </button>
+                          </li>
                           <li><hr className="dropdown-divider" /></li>
                           <li>
                             <button

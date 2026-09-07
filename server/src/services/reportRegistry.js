@@ -170,7 +170,7 @@ const MODULES = {
   },
 
   subscriptions: {
-    label: 'Subscriptions',
+    label: 'Recurring',
     table: 'subscriptions', alias: 's',
     joins: [
       { table: 'contacts',      alias: 'c',   on: 'c.id = s.contact_id' },

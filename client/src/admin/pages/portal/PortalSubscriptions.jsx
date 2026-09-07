@@ -71,7 +71,7 @@ export default function PortalSubscriptions() {
 
   return (
     <div>
-      <h3 className="fw-bolder mb-1">Subscriptions</h3>
+      <h3 className="fw-bolder mb-1">Recurring</h3>
       <p className="text-muted">Your active recurring plans.</p>
 
       <div className="card">
@@ -118,7 +118,7 @@ export default function PortalSubscriptions() {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan="7"><div className="empty-state">No subscriptions yet.</div></td></tr>}
+                {rows.length === 0 && <tr><td colSpan="7"><div className="empty-state">No recurring plans yet.</div></td></tr>}
               </tbody>
             </table>
           </div>
@@ -129,7 +129,7 @@ export default function PortalSubscriptions() {
         show={!!active}
         onClose={closeDetail}
         size="lg"
-        title={active?.subscription?.name || 'Subscription'}
+        title={active?.subscription?.name || 'Recurring Plan'}
         footer={<>
           {active?.subscription && !['canceled', 'completed'].includes(active.subscription.status) && (
             <>

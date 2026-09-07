@@ -36,7 +36,7 @@ async function requireAuth(req, res, next) {
     const loadId = decoded.impersonating_as || decoded.sub;
 
     const [rows] = await db.query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.contact_id
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.contact_id, u.default_dashboard
          FROM users u WHERE u.id = :id`,
       { id: loadId }
     );

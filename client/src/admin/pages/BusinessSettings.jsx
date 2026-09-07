@@ -1699,7 +1699,7 @@ function SubscriptionsSettingsTab() {
         failed_payment_retry_3_days: Number(cfg.failed_payment_retry_3_days) || 0,
       };
       await api.put('/settings/module/subscriptions', payload);
-      setMsg('Subscription settings saved.');
+      setMsg('Recurring settings saved.');
       setMsgType('success');
     } catch (err) {
       setMsg(err.response?.data?.error || 'Save failed.');
@@ -1725,7 +1725,7 @@ function SubscriptionsSettingsTab() {
                 <option value="monthly">Monthly</option>
                 <option value="annual">Annual</option>
               </select>
-              <div className="form-text">Pre-selected when creating a new subscription.</div>
+              <div className="form-text">Pre-selected when creating a new recurring plan.</div>
             </div>
             <div className="col-md-4">
               <label className="form-label">Renewal Reminder (days before expiry)</label>
@@ -1737,7 +1737,7 @@ function SubscriptionsSettingsTab() {
                 min={0}
                 placeholder="14"
               />
-              <div className="form-text">Send renewal notice this many days before the subscription expires.</div>
+              <div className="form-text">Send renewal notice this many days before the recurring plan expires.</div>
             </div>
             <div className="col-12">
               <div className="form-check form-switch">
@@ -1749,7 +1749,7 @@ function SubscriptionsSettingsTab() {
                   onChange={setCheck('auto_invoice_on_renewal')}
                 />
                 <label className="form-check-label" htmlFor="auto_invoice_on_renewal">
-                  Auto-generate invoice when a subscription renews
+                  Auto-generate invoice when a recurring plan renews
                 </label>
               </div>
             </div>
@@ -1812,7 +1812,7 @@ function SubscriptionsSettingsTab() {
         <button type="submit" className="btn btn-primary px-4" disabled={saving}>
           {saving
             ? <><span className="spinner-border spinner-border-sm me-2" />Saving…</>
-            : <>Save Subscription Settings</>}
+            : <>Save Recurring Settings</>}
         </button>
       </div>
     </form>
@@ -1979,7 +1979,7 @@ const TABS = [
   { id: 'organizations',  label: 'Organizations',   icon: 'solar:buildings-3-line-duotone' },
   { id: 'deals',          label: 'Deals',           icon: 'solar:hand-money-line-duotone' },
   { id: 'tasks',          label: 'Tasks',           icon: 'solar:checklist-minimalistic-line-duotone' },
-  { id: 'subscriptions',  label: 'Subscriptions',   icon: 'solar:refresh-circle-line-duotone' },
+  { id: 'subscriptions',  label: 'Recurring',       icon: 'solar:refresh-circle-line-duotone' },
   { id: 'portal',         label: 'Portal',          icon: 'solar:global-line-duotone' },
 ];
 

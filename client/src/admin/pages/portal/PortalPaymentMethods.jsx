@@ -538,7 +538,7 @@ export default function PortalPaymentMethods() {
             <iconify-icon icon="solar:card-line-duotone" style={{ fontSize: 48, color: '#ccc' }}></iconify-icon>
             <h5 className="mt-3 mb-1 text-muted">No saved payment methods</h5>
             <p className="text-muted small mb-3">
-              Save a card to pay invoices faster, or to enable automatic billing on subscriptions.
+              Save a card to pay invoices faster, or to enable automatic billing on recurring plans.
             </p>
             <button
               className="btn"

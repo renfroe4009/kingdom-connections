@@ -112,7 +112,7 @@ export default function SubscriptionDetail() {
     } finally { setRunning(false); }
   }
   async function remove() {
-    if (!(await confirm(`Delete subscription "${sub.name}"? All line items will be removed.`, { danger: true }))) return;
+    if (!(await confirm(`Delete recurring plan "${sub.name}"? All line items will be removed.`, { danger: true }))) return;
     try {
       await api.delete(`/subscriptions/${id}`);
       navigate('/admin/subscriptions');
@@ -303,13 +303,13 @@ export default function SubscriptionDetail() {
                     </tbody>
                   </table>
                 </div>
-              ) : <div className="text-muted small">No transactions have run for this subscription yet.</div>}
+              ) : <div className="text-muted small">No transactions have run for this recurring plan yet.</div>}
             </div>
           </div>
         </div>
       </div>
 
-      <Modal show={showEdit} onClose={() => setShowEdit(false)} title="Edit Subscription" size="lg"
+      <Modal show={showEdit} onClose={() => setShowEdit(false)} title="Edit Recurring Plan" size="lg"
         footer={<><button className="btn btn-light" onClick={() => setShowEdit(false)}>Cancel</button>
                   <button className="btn btn-primary" onClick={saveEdit}>Save</button></>}>
         {editForm && (

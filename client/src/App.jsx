@@ -7,6 +7,7 @@ import AppLayout from './admin/components/AppLayout.jsx';
 import Login from './admin/pages/Login.jsx';
 import ResetPassword from './admin/pages/ResetPassword.jsx';
 import Dashboard from './admin/pages/Dashboard.jsx';
+import NonprofitDashboard from './admin/pages/NonprofitDashboard.jsx';
 import ContactsList from './admin/pages/ContactsList.jsx';
 import ContactDetail from './admin/pages/ContactDetail.jsx';
 import OrganizationsList from './admin/pages/OrganizationsList.jsx';
@@ -139,6 +140,16 @@ function PermissionRoute({ perm, children }) {
   return children;
 }
 
+// Renders whichever admin dashboard the logged-in user prefers — nonprofit
+// (the default, matching users.default_dashboard's DB default) or sales.
+// Both live at the same /admin/dashboard URL so the sidebar's single
+// "Dashboard" nav item and the user dropdown's toggle don't need to know
+// about two separate routes.
+function DashboardRouter() {
+  const { user } = useAuth();
+  return user?.default_dashboard === 'sales' ? <Dashboard /> : <NonprofitDashboard />;
+}
+
 // The admin app used to live at "/", so old bookmarks/links to bare
 // top-level segments (e.g. /contacts, /invoices) need to keep working after
 // the move to /admin/*. Preserves the sub-path and query string.
@@ -194,7 +205,7 @@ export default function App() {
         <Protected blockPortal><AppLayout /></Protected>
       }>
         <Route index element={<Navigate to="/admin/dashboard" replace />} />
-        <Route path="dashboard"          element={<Dashboard />} />
+        <Route path="dashboard"          element={<DashboardRouter />} />
 
         <Route path="contacts"           element={<PermissionRoute perm="contacts.read"><ContactsList /></PermissionRoute>} />
         <Route path="contacts/:id"       element={<PermissionRoute perm="contacts.read"><ContactDetail /></PermissionRoute>} />

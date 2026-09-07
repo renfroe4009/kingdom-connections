@@ -18,7 +18,7 @@ const navItems = [
   { to: '/portal/events',           label: 'My Events',        icon: 'solar:calendar-line-duotone' },
   { to: '/portal/orders',           label: 'My Orders',        icon: 'solar:bag-check-line-duotone' },
   { to: '/portal/invoices',         label: 'Invoices',         icon: 'solar:bill-list-line-duotone' },
-  { to: '/portal/subscriptions',    label: 'Subscriptions',    icon: 'solar:refresh-circle-line-duotone' },
+  { to: '/portal/subscriptions',    label: 'Recurring',        icon: 'solar:refresh-circle-line-duotone' },
   { to: '/portal/payment-methods',  label: 'Payment Methods',  icon: 'solar:card-line-duotone' },
   { to: '/portal/profile',          label: 'My Profile',       icon: 'solar:user-line-duotone' },
 ];

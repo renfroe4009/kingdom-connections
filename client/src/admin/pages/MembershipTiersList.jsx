@@ -78,7 +78,7 @@ export default function MembershipTiersList() {
   }
 
   async function remove(t) {
-    if (!(await confirm(`Delete tier "${t.name}"? Existing members keep their subscription but lose this tier's details.`, { danger: true }))) return;
+    if (!(await confirm(`Delete tier "${t.name}"? Existing members keep their recurring plan but lose this tier's details.`, { danger: true }))) return;
     try {
       await api.delete(`/membership/admin/tiers/${t.id}`);
       load();

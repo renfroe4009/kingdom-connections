@@ -66,11 +66,21 @@ export function AuthProvider({ children }) {
     setImpersonating(null);
   }
 
+  // Which admin dashboard shows on login — 'nonprofit' (default) or 'sales'.
+  async function updateDashboardPreference(value) {
+    await api.put('/auth/me/dashboard', { default_dashboard: value });
+    setUser((u) => {
+      const next = { ...u, default_dashboard: value };
+      localStorage.setItem('lc_user', JSON.stringify(next));
+      return next;
+    });
+  }
+
   const can = (perm) =>
     !!user && (user.roles?.includes('admin') || user.permissions?.includes(perm));
 
   return (
-    <AuthCtx.Provider value={{ user, loading, login, logout, can, impersonating, impersonate, stopImpersonating }}>
+    <AuthCtx.Provider value={{ user, loading, login, logout, can, impersonating, impersonate, stopImpersonating, updateDashboardPreference }}>
       {children}
     </AuthCtx.Provider>
   );

@@ -43,7 +43,7 @@ router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
     const [rows] = await db.query(
-      `SELECT id, email, password_hash, first_name, last_name, is_active, contact_id
+      `SELECT id, email, password_hash, first_name, last_name, is_active, contact_id, default_dashboard
          FROM users WHERE email = :email LIMIT 1`,
       { email }
     );
@@ -90,6 +90,17 @@ router.post('/login', loginLimiter, async (req, res, next) => {
 
 router.get('/me', requireAuth, async (req, res) => {
   res.json({ user: req.user });
+});
+
+// Self-service preference — any authenticated user may set which admin
+// dashboard shows on login. No special permission required, since a user
+// changing their own preference isn't a privileged action.
+router.put('/me/dashboard', requireAuth, async (req, res, next) => {
+  try {
+    const value = z.enum(['nonprofit', 'sales']).parse(req.body?.default_dashboard);
+    await db.query('UPDATE users SET default_dashboard = :value WHERE id = :id', { value, id: req.user.id });
+    res.json({ ok: true, default_dashboard: value });
+  } catch (err) { next(err); }
 });
 
 router.post('/logout', requireAuth, async (req, res) => {
