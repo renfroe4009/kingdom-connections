@@ -160,21 +160,37 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 }
 
 /* ── Mobile topbar logo ───────────────────────────────────────────────────── */
-@media (max-width: 991.98px) {
+/* Breakpoint matches the vendor admin theme's own sidebar breakpoint
+   (client/public/vendor/css/styles.css hides .left-sidebar off-screen below
+   1300px via its own `left: -270px` rule) — NOT Bootstrap's lg (992px). Using
+   991.98px here left a dead zone from 992px to 1299px (a common laptop
+   width) where the vendor CSS had already hidden the sidebar off-screen but
+   neither the hamburger button nor this drawer-reveal CSS had kicked in yet,
+   so the sidebar was simply unreachable. Keep this in sync with the
+   `.d-1300-none` utility below and AppLayout.jsx's hamburger/brand classes. */
+@media (max-width: 1299.98px) {
   .topbar .navbar .nav-item img {
     height: 36px !important;
   }
 }
 
+/* Hides an element only at/above the vendor sidebar's own desktop breakpoint
+   (1300px) — used for the hamburger + mobile brand mark, which need to stay
+   visible throughout the whole "sidebar is a slide-out drawer" range
+   (<1300px), not just below Bootstrap's lg (992px). */
+@media (min-width: 1300px) {
+  .d-1300-none { display: none !important; }
+}
+
 /* ── Mobile sidebar ───────────────────────────────────────────────────────── */
-@media (max-width: 991.98px) {
+@media (max-width: 1299.98px) {
   /* Hide the fixed sidebar by default; slide in when .sidebar-open is on #main-wrapper */
   .left-sidebar {
     position: fixed !important;
     top: 0;
-    left: 0;
+    left: 0 !important; /* overrides the vendor theme's own `left: -270px` for this range */
     height: 100vh;
-    z-index: 1050;
+    z-index: 1050 !important; /* overrides the vendor theme's own `z-index: 99`, which otherwise sits below the backdrop (1049) and silently eats every click on the open drawer's links */
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     width: 260px !important;

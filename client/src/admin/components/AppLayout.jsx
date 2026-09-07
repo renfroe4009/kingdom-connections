@@ -107,6 +107,7 @@ const SECTIONS = [
       { to: '/admin/membership',       label: 'Members',          icon: 'solar:users-group-two-rounded-line-duotone', perm: 'membership.read' },
       { to: '/admin/membership/tiers', label: 'Membership Tiers',  icon: 'solar:medal-ribbons-star-line-duotone',     perm: 'membership.read' },
       { to: '/admin/events',           label: 'Events',           icon: 'solar:calendar-line-duotone',        perm: 'events.read' },
+      { to: '/admin/events/calendar',  label: 'Events Calendar',  icon: 'solar:calendar-line-duotone',        perm: 'events.read' },
       { to: '/admin/volunteers',       label: 'Volunteers',       icon: 'solar:user-heart-line-duotone',     perm: 'volunteers.read' },
     ],
   },
@@ -360,9 +361,13 @@ export default function AppLayout() {
           <div className="container-fluid mw-100">
             <header className="topbar sticky-top" style={{ borderBottom: '1px solid var(--border-warm)' }}>
               <nav className="navbar p-2 d-flex align-items-center gap-3">
-                {/* Left: hamburger + brand (mobile) */}
+                {/* Left: hamburger + brand. Visible throughout the whole "sidebar is a
+                    slide-out drawer" range (<1300px, see .d-1300-none / the vendor
+                    theme's own sidebar breakpoint in styles.css) — not just below
+                    Bootstrap's lg (992px), so there's no dead zone on laptop widths
+                    where the sidebar is hidden but nothing can open it. */}
                 <ul className="navbar-nav d-flex flex-row align-items-center gap-2 mb-0">
-                  <li className="nav-item d-lg-none">
+                  <li className="nav-item d-1300-none">
                     <button
                       className="btn btn-light btn-sm border d-flex align-items-center justify-content-center"
                       style={{ width: 44, height: 44 }}
@@ -372,7 +377,7 @@ export default function AppLayout() {
                       <iconify-icon icon="solar:hamburger-menu-line-duotone" class="fs-5"></iconify-icon>
                     </button>
                   </li>
-                  <li className="nav-item d-lg-none">
+                  <li className="nav-item d-1300-none">
                     <BrandMark size="sm" linkHome />
                   </li>
                 </ul>
@@ -395,7 +400,11 @@ export default function AppLayout() {
                       <button
                         key={s.key}
                         type="button"
-                        onClick={() => navigate(firstPath(s))}
+                        // Below 1300px the sidebar is a slide-out drawer, not pinned
+                        // (see styles.css), so there's nowhere else to see this
+                        // module's sub-items after navigating — open the drawer too.
+                        // No-op above 1300px: the drawer CSS doesn't apply there.
+                        onClick={() => { navigate(firstPath(s)); setSidebarOpen(true); }}
                         className="btn btn-sm d-flex align-items-center gap-2 flex-shrink-0"
                         style={{
                           borderRadius: 20,
