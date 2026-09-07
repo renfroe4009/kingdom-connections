@@ -110,6 +110,8 @@ import TaxPage from './admin/pages/TaxPage.jsx';
 import ProcessingFeesPage from './admin/pages/ProcessingFeesPage.jsx';
 import ShopPage from './frontend/pages/ShopPage.jsx';
 import ProductPage from './frontend/pages/ProductPage.jsx';
+import EventsPage from './frontend/pages/EventsPage.jsx';
+import EventPage from './frontend/pages/EventPage.jsx';
 import CartPage from './frontend/pages/CartPage.jsx';
 import CheckoutPage from './frontend/pages/CheckoutPage.jsx';
 import OrderConfirmationPage from './frontend/pages/OrderConfirmationPage.jsx';
@@ -319,6 +321,8 @@ export default function App() {
         <Route path="/search"     element={<SearchResultsPage />} />
         <Route path="/shop"       element={<ShopPage />} />
         <Route path="/shop/:slug" element={<ProductPage />} />
+        <Route path="/events"       element={<EventsPage />} />
+        <Route path="/events/:slug" element={<EventPage />} />
         <Route path="/cart"       element={<CartPage />} />
         <Route path="/checkout"  element={<CheckoutPage />} />
         <Route path="/order-confirmation/:num" element={<OrderConfirmationPage />} />

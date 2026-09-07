@@ -252,6 +252,72 @@ export const PAGE_TEMPLATES = [
         ]),
       ]),
   },
+  {
+    id: 'donation',
+    label: 'Donation',
+    description: 'Hero and a donation panel with amount picker.',
+    icon: 'mdi:hand-heart-outline',
+    build: () =>
+      tree([
+        section({ customId: 'hero', paddingTop: 96, paddingBottom: 96 }, [
+          row({}, [
+            col({ span: 12, textAlign: 'center', horizontalAlign: 'center' }, [
+              heading({ text: 'Support the work', eyebrow: 'Give', level: 'h1', size: '3rem', align: 'center' }),
+              text({ html: '<p>Explain what a gift makes possible in one or two sentences.</p>', align: 'center', maxWidth: '60ch' }),
+            ]),
+          ]),
+        ]),
+        section({ customId: 'donate' }, [
+          row({}, [
+            col({ span: 8, spanMobile: 12, horizontalAlign: 'center' }, [
+              n('DonationBlock', {
+                customId: '', customClass: '',
+                heading: 'Make a Donation',
+                blurb: 'Every gift helps — choose an amount to get started.',
+                amounts: [
+                  { value: 25, label: '' },
+                  { value: 50, label: '' },
+                  { value: 100, label: '' },
+                  { value: 250, label: '' },
+                ],
+                allowCustom: true,
+                coverFeesOption: true,
+                coverFeesLabel: 'Add a little extra to cover processing fees',
+                fundSlug: '',
+                buttonLabel: 'Donate Securely',
+                thankYouText: 'Thank you — your gift has been received.',
+                disclaimerText: 'Payments processed securely. A receipt is sent to your email automatically.',
+              }),
+            ]),
+          ]),
+        ]),
+      ]),
+  },
+  {
+    id: 'event-registration',
+    label: 'Event Registration',
+    description: 'Hero and a list of upcoming events pulled live from your calendar.',
+    icon: 'mdi:calendar-star-outline',
+    build: () =>
+      tree([
+        section({ customId: 'hero', paddingTop: 96, paddingBottom: 96 }, [
+          row({}, [
+            col({ span: 12, textAlign: 'center', horizontalAlign: 'center' }, [
+              heading({ text: 'Upcoming events', eyebrow: 'Join us', level: 'h1', size: '3rem', align: 'center' }),
+              text({ html: '<p>See what is coming up and reserve your spot.</p>', align: 'center', maxWidth: '60ch' }),
+            ]),
+          ]),
+        ]),
+        section({ customId: 'events' }, [
+          row({}, [
+            col({ span: 12 }, [
+              spacer(16),
+              n('EventListBlock', { customId: '', customClass: '', limit: 6, columns: 3, showDates: true, showLocation: true, emptyText: 'No upcoming events right now — check back soon.' }),
+            ]),
+          ]),
+        ]),
+      ]),
+  },
 ];
 
 /** Resolve a template id to the serialized tree a new page should start from. */
