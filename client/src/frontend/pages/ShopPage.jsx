@@ -21,42 +21,42 @@ export default function ShopPage() {
   }, [categoryId]);
 
   return (
-    <div className="container" style={{ paddingTop: '2.5rem', paddingBottom: '4rem' }}>
-      <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ color: 'var(--brand-secondary)', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '2.5px', fontWeight: 600 }}>Official Merchandise</div>
-          <h1 className="heading-serif" style={{ color: 'var(--brand-primary)', fontSize: 'clamp(2.25rem,5vw,3rem)', letterSpacing: '-1.5px', marginTop: 4 }}>Shop &amp; Show Your Support</h1>
-        </div>
-        <div className="d-none d-md-block" style={{ textAlign: 'right', fontSize: '0.75rem', color: '#6b7280' }}>All proceeds benefit<br />Ventura County deputies &amp; programs</div>
-      </div>
+    <div className="ns-section">
+      <div className="ns-grid">
+        <div className="ns-block" style={{ '--col-start': 1, '--col-span': 12 }}>
+          <div className="section-heading">
+            <p className="eyebrow">Resource Shop</p>
+            <h2>Shop & Support the Movement</h2>
+            <p>Every purchase supports Kingdom Connections&rsquo; work.</p>
+          </div>
 
-      {categories.length > 1 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: '2rem', flexWrap: 'wrap' }}>
-          <button onClick={() => setSearchParams({})}
-            style={{ padding: '6px 16px', borderRadius: 999, border: '1px solid #e5e7eb', background: !categoryId ? 'var(--brand-primary)' : '#fff', color: !categoryId ? '#fff' : '#333', cursor: 'pointer', fontSize: '0.85rem' }}>
-            All
-          </button>
-          {categories.map(c => (
-            <button key={c.id} onClick={() => setSearchParams({ category: c.id })}
-              style={{ padding: '6px 16px', borderRadius: 999, border: '1px solid #e5e7eb', background: String(categoryId) === String(c.id) ? 'var(--brand-primary)' : '#fff', color: String(categoryId) === String(c.id) ? '#fff' : '#333', cursor: 'pointer', fontSize: '0.85rem' }}>
-              {c.name}
-            </button>
-          ))}
-        </div>
-      )}
+          {categories.length > 1 && (
+            <div className="donate-amounts" style={{ justifyContent: 'center' }}>
+              <button onClick={() => setSearchParams({})} className={`amount-pill${!categoryId ? ' amount-pill--active' : ''}`}>
+                All
+              </button>
+              {categories.map(c => (
+                <button key={c.id} onClick={() => setSearchParams({ category: c.id })} className={`amount-pill${String(categoryId) === String(c.id) ? ' amount-pill--active' : ''}`}>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
 
-      {loading ? (
-        <div className="text-center py-5"><span className="spinner-border text-primary" /></div>
-      ) : products.length === 0 ? (
-        <div className="text-center text-muted py-5">No products available yet — check back soon.</div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1.5rem' }}>
-          {products.map(p => <ProductCard key={p.id} product={p} />)}
-        </div>
-      )}
+          {loading ? (
+            <p style={{ textAlign: 'center' }}>Loading products…</p>
+          ) : products.length === 0 ? (
+            <p style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No products available yet — check back soon.</p>
+          ) : (
+            <div className="shop-grid" style={{ '--card-cols': 3 }}>
+              {products.map(p => <ProductCard key={p.id} product={p} />)}
+            </div>
+          )}
 
-      <div style={{ fontSize: '0.75rem', textAlign: 'center', color: '#6b7280', marginTop: '2.5rem' }}>
-        Questions about sizing or bulk orders for your business? <a href="/contact" style={{ textDecoration: 'underline' }}>Contact us</a>.
+          <p style={{ fontSize: 'var(--text-sm)', textAlign: 'center', color: 'var(--color-text-muted)', marginTop: 'var(--space-7)' }}>
+            Questions about an order? <a href="/contact">Contact us</a>.
+          </p>
+        </div>
       </div>
     </div>
   );

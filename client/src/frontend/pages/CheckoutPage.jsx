@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../../api/client.js';
-import { useCart } from '../context/CartContext.jsx';
+import { useCart, CART_TOKEN_KEY } from '../context/CartContext.jsx';
 import CheckoutPaymentForm from '../components/CheckoutPaymentForm.jsx';
 
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
@@ -69,7 +69,7 @@ export default function CheckoutPage() {
     if (!cart.items.length) return;
     try {
       const { data } = await api.post('/checkout/estimate', {
-        session_key: localStorage.getItem('vcsf_cart_token'),
+        session_key: localStorage.getItem(CART_TOKEN_KEY),
         shipping_state: form.shipping_state,
         shipping_country: 'US',
         shipping_rate_id: shippingRateId,
@@ -104,7 +104,7 @@ export default function CheckoutPage() {
     try {
       const selectedRate = shippingOptions.find(r => r.id === shippingRateId);
       const { data } = await api.post('/checkout/complete', {
-        session_key: localStorage.getItem('vcsf_cart_token'),
+        session_key: localStorage.getItem(CART_TOKEN_KEY),
         ...form,
         shipping_country: 'US',
         shipping_rate_id: shippingRateId,
@@ -133,7 +133,7 @@ export default function CheckoutPage() {
     setError('');
     try {
       const { data } = await api.post('/checkout/complete', {
-        session_key: localStorage.getItem('vcsf_cart_token'),
+        session_key: localStorage.getItem(CART_TOKEN_KEY),
         ...form,
         shipping_country: 'US',
       });
@@ -154,7 +154,7 @@ export default function CheckoutPage() {
       try {
         const selectedRate = shippingOptions.find(r => r.id === shippingRateId);
         const { data } = await api.post('/checkout/complete-saved', {
-          session_key: localStorage.getItem('vcsf_cart_token'),
+          session_key: localStorage.getItem(CART_TOKEN_KEY),
           ...form,
           shipping_country: 'US',
           shipping_rate_id: shippingRateId,
@@ -174,7 +174,7 @@ export default function CheckoutPage() {
     try {
       const selectedRate = shippingOptions.find(r => r.id === shippingRateId);
       const { data } = await api.post('/checkout/public/intent', {
-        session_key: localStorage.getItem('vcsf_cart_token'),
+        session_key: localStorage.getItem(CART_TOKEN_KEY),
         ...form,
         shipping_country: 'US',
         shipping_rate_id: shippingRateId,
@@ -187,98 +187,100 @@ export default function CheckoutPage() {
     }
   }
 
-  if (cartLoading) return <div className="text-center py-5" style={{ background: '#ffffff' }}><span className="spinner-border text-primary" /></div>;
+  if (cartLoading) return <div className="ns-section" style={{ textAlign: 'center' }}><p>Loading…</p></div>;
 
   return (
-    <div style={{ background: '#ffffff' }}>
-      <div style={{ maxWidth: 1600, margin: '0 auto', padding: '2.5rem 1.5rem 4rem' }}>
-      <h1 className="heading-serif" style={{ color: 'var(--brand-primary)', marginBottom: '1.5rem' }}>Checkout</h1>
-      <div className="row g-4">
-        <div className="col-lg-7">
+    <div className="ns-section">
+      <div className="ns-grid">
+        <div className="ns-block" style={{ '--col-start': 1, '--col-span': 12 }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-primary)', marginBottom: 'var(--space-6)' }}>Checkout</h1>
+        </div>
+
+        <div className="ns-block" style={{ '--col-start': 1, '--col-span': 7 }}>
           {!loggedIn && (
-            <div className="alert alert-light border small mb-3 d-flex justify-content-between align-items-center">
+            <div className="form-note" style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
               <span>Have an account?</span>
-              <Link to="/portal/login?redirect=/checkout" className="fw-semibold">Log in to use a saved card</Link>
+              <Link to="/portal/login?redirect=/checkout" style={{ fontWeight: 600 }}>Log in to use a saved card</Link>
             </div>
           )}
 
-          <div className="card mb-3"><div className="card-body">
-            <h6 className="fw-bolder mb-3">Contact</h6>
-            <div className="row g-2">
-              <div className="col-md-6"><label className="form-label">First Name</label>
-                <input className="form-control" value={form.first_name} onChange={e => set('first_name', e.target.value)} disabled={showPayment} /></div>
-              <div className="col-md-6"><label className="form-label">Last Name</label>
-                <input className="form-control" value={form.last_name} onChange={e => set('last_name', e.target.value)} disabled={showPayment} /></div>
-              <div className="col-md-6"><label className="form-label">Email</label>
-                <input type="email" className="form-control" value={form.email} onChange={e => set('email', e.target.value)} disabled={showPayment} /></div>
-              <div className="col-md-6"><label className="form-label">Phone</label>
-                <input className="form-control" value={form.phone} onChange={e => set('phone', e.target.value)} disabled={showPayment} /></div>
+          <div className="form-card" style={{ marginBottom: 'var(--space-5)' }}>
+            <h3 className="donate-panel__heading">Contact</h3>
+            <div className="form-row-2">
+              <div className="form-field"><label>First Name</label>
+                <input value={form.first_name} onChange={e => set('first_name', e.target.value)} disabled={showPayment} /></div>
+              <div className="form-field"><label>Last Name</label>
+                <input value={form.last_name} onChange={e => set('last_name', e.target.value)} disabled={showPayment} /></div>
+              <div className="form-field"><label>Email</label>
+                <input type="email" value={form.email} onChange={e => set('email', e.target.value)} disabled={showPayment} /></div>
+              <div className="form-field"><label>Phone</label>
+                <input value={form.phone} onChange={e => set('phone', e.target.value)} disabled={showPayment} /></div>
             </div>
-          </div></div>
+          </div>
 
           {loggedIn && savedCards.length > 0 && !showPayment && (
-            <div className="card mb-3"><div className="card-body">
-              <h6 className="fw-bolder mb-3">Payment Method</h6>
-              <div className="btn-group mb-3" role="group">
-                <button type="button" className={`btn btn-sm ${cardMode === 'saved' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setCardMode('saved')}>Saved card</button>
-                <button type="button" className={`btn btn-sm ${cardMode === 'new' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setCardMode('new')}>New card</button>
+            <div className="form-card" style={{ marginBottom: 'var(--space-5)' }}>
+              <h3 className="donate-panel__heading">Payment Method</h3>
+              <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+                <button type="button" className={`btn btn--sm ${cardMode === 'saved' ? 'btn--gold' : 'btn--outline-dark'}`} onClick={() => setCardMode('saved')}>Saved card</button>
+                <button type="button" className={`btn btn--sm ${cardMode === 'new' ? 'btn--gold' : 'btn--outline-dark'}`} onClick={() => setCardMode('new')}>New card</button>
               </div>
               {cardMode === 'saved' && (
                 <div>
                   {savedCards.map((p) => (
-                    <label key={p.id} className="d-flex align-items-center gap-2 border rounded p-2 mb-2" style={{ cursor: 'pointer' }}>
+                    <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-3)', marginBottom: 'var(--space-2)', cursor: 'pointer' }}>
                       <input type="radio" name="checkout_saved_card" checked={selectedCard?.id === p.id} onChange={() => setSelectedCard(p)} />
-                      <span className="small">
+                      <span style={{ fontSize: 'var(--text-sm)' }}>
                         {p.card_brand ? `${p.card_brand.charAt(0).toUpperCase()}${p.card_brand.slice(1)} ` : ''}
                         •••• {p.last4 || '????'}
-                        {p.is_default && <span className="text-muted ms-2">Default</span>}
+                        {p.is_default && <span style={{ color: 'var(--color-text-muted)', marginLeft: 'var(--space-2)' }}>Default</span>}
                       </span>
                     </label>
                   ))}
                 </div>
               )}
-            </div></div>
+            </div>
           )}
 
           {requiresShipping && (
-            <div className="card mb-3"><div className="card-body">
-              <h6 className="fw-bolder mb-3">Shipping Address</h6>
-              <div className="row g-2">
-                <div className="col-12"><label className="form-label">Address</label>
-                  <input className="form-control" value={form.shipping_line1} onChange={e => set('shipping_line1', e.target.value)} disabled={showPayment} /></div>
-                <div className="col-12"><label className="form-label">Apt / Suite <span className="text-muted">(optional)</span></label>
-                  <input className="form-control" value={form.shipping_line2} onChange={e => set('shipping_line2', e.target.value)} disabled={showPayment} /></div>
-                <div className="col-md-5"><label className="form-label">City</label>
-                  <input className="form-control" value={form.shipping_city} onChange={e => set('shipping_city', e.target.value)} disabled={showPayment} /></div>
-                <div className="col-md-4"><label className="form-label">State</label>
-                  <select className="form-select" value={form.shipping_state} onChange={e => set('shipping_state', e.target.value)} disabled={showPayment}>
+            <div className="form-card" style={{ marginBottom: 'var(--space-5)' }}>
+              <h3 className="donate-panel__heading">Shipping Address</h3>
+              <div className="form-field"><label>Address</label>
+                <input value={form.shipping_line1} onChange={e => set('shipping_line1', e.target.value)} disabled={showPayment} /></div>
+              <div className="form-field"><label>Apt / Suite <span style={{ color: 'var(--color-text-muted)' }}>(optional)</span></label>
+                <input value={form.shipping_line2} onChange={e => set('shipping_line2', e.target.value)} disabled={showPayment} /></div>
+              <div className="form-row-2">
+                <div className="form-field"><label>City</label>
+                  <input value={form.shipping_city} onChange={e => set('shipping_city', e.target.value)} disabled={showPayment} /></div>
+                <div className="form-field"><label>State</label>
+                  <select value={form.shipping_state} onChange={e => set('shipping_state', e.target.value)} disabled={showPayment}>
                     <option value="">—</option>
                     {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select></div>
-                <div className="col-md-3"><label className="form-label">ZIP</label>
-                  <input className="form-control" value={form.shipping_zip} onChange={e => set('shipping_zip', e.target.value)} disabled={showPayment} /></div>
               </div>
+              <div className="form-field" style={{ maxWidth: 160 }}><label>ZIP</label>
+                <input value={form.shipping_zip} onChange={e => set('shipping_zip', e.target.value)} disabled={showPayment} /></div>
               {shippingOptions.length > 0 && (
-                <div className="mt-3">
-                  <label className="form-label">Shipping Method</label>
+                <div style={{ marginBottom: 'var(--space-4)' }}>
+                  <label style={{ display: 'block', fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-2)', color: 'var(--color-primary)' }}>Shipping Method</label>
                   {shippingOptions.map(opt => (
-                    <div className="form-check" key={opt.id}>
-                      <input className="form-check-input" type="radio" name="shipping-rate" checked={shippingRateId === opt.id}
-                        onChange={() => setShippingRateId(opt.id)} disabled={showPayment} id={`ship-${opt.id}`} />
-                      <label className="form-check-label" htmlFor={`ship-${opt.id}`}>{opt.name} — {opt.cost === 0 ? 'Free' : `$${opt.cost.toFixed(2)}`}</label>
-                    </div>
+                    <label key={opt.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                      <input type="radio" name="shipping-rate" checked={shippingRateId === opt.id}
+                        onChange={() => setShippingRateId(opt.id)} disabled={showPayment} />
+                      <span>{opt.name} — {opt.cost === 0 ? 'Free' : `$${opt.cost.toFixed(2)}`}</span>
+                    </label>
                   ))}
                 </div>
               )}
-              <div className="mt-3"><label className="form-label">Order Note <span className="text-muted">(optional)</span></label>
-                <textarea className="form-control" rows={2} value={form.customer_note} onChange={e => set('customer_note', e.target.value)} disabled={showPayment} /></div>
-            </div></div>
+              <div className="form-field"><label>Order Note <span style={{ color: 'var(--color-text-muted)' }}>(optional)</span></label>
+                <textarea rows={2} value={form.customer_note} onChange={e => set('customer_note', e.target.value)} disabled={showPayment} /></div>
+            </div>
           )}
 
           {!showPayment ? (
             <>
-              {error && <div className="alert alert-danger py-2 small">{error}</div>}
-              <button className="btn btn-primary w-100" style={{ background: 'var(--brand-secondary)', color: 'var(--brand-primary)', border: 'none', fontWeight: 600, padding: '0.85rem' }}
+              {error && <div className="form-error">{error}</div>}
+              <button className="btn btn--gold" style={{ width: '100%' }}
                 disabled={!reviewComplete() || submitting || (cardMode === 'saved' && savedCards.length > 0 && !selectedCard)}
                 onClick={isFreeOrder ? completeFreeOrder : continueToPayment}>
                 {submitting
@@ -291,39 +293,38 @@ export default function CheckoutPage() {
               </button>
             </>
           ) : (
-            <div className="card"><div className="card-body">
-              <h6 className="fw-bolder mb-3">Payment</h6>
-              {error && <div className="alert alert-danger py-2 small">{error}</div>}
+            <div className="form-card">
+              <h3 className="donate-panel__heading">Payment</h3>
+              {error && <div className="form-error">{error}</div>}
               {submitting
-                ? <div className="text-center py-4"><span className="spinner-border text-primary mb-2" /><div className="small text-muted">Placing your order…</div></div>
+                ? <p className="form-note" style={{ textAlign: 'center' }}>Placing your order…</p>
                 : <CheckoutPaymentForm key={paymentKey} intentId={intentId} onToken={handleToken} onAchResult={handleAchResult} />}
-              <button className="btn btn-light btn-sm mt-2" onClick={() => setShowPayment(false)} disabled={submitting}>Back</button>
-            </div></div>
+              <button className="btn btn--outline-dark btn--sm" style={{ marginTop: 'var(--space-3)' }} onClick={() => setShowPayment(false)} disabled={submitting}>Back</button>
+            </div>
           )}
         </div>
 
-        <div className="col-lg-5">
-          <div className="card" style={{ background: '#F8F5EF', border: '1px solid #ece7dc' }}><div className="card-body">
-            <h6 className="fw-bolder mb-3">Order Summary</h6>
+        <div className="ns-block" style={{ '--col-start': 8, '--col-span': 5 }}>
+          <div className="form-card" style={{ background: 'var(--color-surface)' }}>
+            <h3 className="donate-panel__heading">Order Summary</h3>
             {cart.items.map(it => (
-              <div key={it.id} className="d-flex justify-content-between small mb-1">
+              <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-2)' }}>
                 <span>{it.item_type === 'event_ticket' ? `${it.event_name} — ${it.name}` : it.name} × {it.qty}</span>
                 <span>${(Number(it.unit_price) * it.qty).toFixed(2)}</span>
               </div>
             ))}
-            <hr />
-            <div className="d-flex justify-content-between small"><span>Subtotal</span><span>${Number(totals.subtotal).toFixed(2)}</span></div>
-            <div className="d-flex justify-content-between small"><span>Shipping</span><span>${Number(totals.shipping).toFixed(2)}</span></div>
-            <div className="d-flex justify-content-between small"><span>Tax</span><span>${Number(totals.tax).toFixed(2)}</span></div>
+            <hr style={{ border: 0, borderTop: '1px solid var(--color-border)', margin: 'var(--space-4) 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-sm)' }}><span>Subtotal</span><span>${Number(totals.subtotal).toFixed(2)}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-sm)' }}><span>Shipping</span><span>${Number(totals.shipping).toFixed(2)}</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-sm)' }}><span>Tax</span><span>${Number(totals.tax).toFixed(2)}</span></div>
             {Number(totals.processing_fee) > 0 && (
-              <div className="d-flex justify-content-between small"><span>{totals.fee_label || 'Processing Fee'}</span><span>${Number(totals.processing_fee).toFixed(2)}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-sm)' }}><span>{totals.fee_label || 'Processing Fee'}</span><span>${Number(totals.processing_fee).toFixed(2)}</span></div>
             )}
-            <hr />
-            <div className="d-flex justify-content-between fw-bolder fs-5"><span>Total</span><span>${Number(totals.total).toFixed(2)}</span></div>
-            <Link to="/cart" className="d-block text-center mt-3 small">Edit Cart</Link>
-          </div></div>
+            <hr style={{ border: 0, borderTop: '1px solid var(--color-border)', margin: 'var(--space-4) 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 'var(--text-lg)', color: 'var(--color-primary)' }}><span>Total</span><span>${Number(totals.total).toFixed(2)}</span></div>
+            <Link to="/cart" style={{ display: 'block', textAlign: 'center', marginTop: 'var(--space-4)', fontSize: 'var(--text-sm)' }}>Edit Cart</Link>
+          </div>
         </div>
-      </div>
       </div>
     </div>
   );

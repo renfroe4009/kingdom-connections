@@ -18,38 +18,40 @@ export default function OrderConfirmationPage() {
   }, [num]);
 
   return (
-    <div className="container text-center" style={{ padding: '5rem 0', maxWidth: 600 }}>
-      <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✓</div>
-      <h1 className="heading-serif" style={{ color: 'var(--brand-primary)' }}>Thank you for your order!</h1>
-      <p className="text-muted">Order confirmation <strong>{num}</strong> — a receipt has been sent to your email.</p>
+    <div className="ns-section" style={{ textAlign: 'center' }}>
+      <div className="ns-grid">
+        <div className="ns-block" style={{ '--col-start': 3, '--col-span': 8 }}>
+          <div style={{ fontSize: '3rem', marginBottom: 'var(--space-4)', color: 'var(--color-accent)' }}>✓</div>
+          <h1 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-primary)' }}>Thank you for your order!</h1>
+          <p style={{ color: 'var(--color-text-muted)' }}>Order confirmation <strong>{num}</strong> — a receipt has been sent to your email.</p>
 
-      {tickets.length > 0 && (
-        <div className="mt-4">
-          <h5 style={{ color: 'var(--brand-primary)' }}>Your Ticket{tickets.length > 1 ? 's' : ''}</h5>
-          <p className="text-muted small">Show one of these at the gate — each code is good for one admission.</p>
-          <div className="d-flex flex-wrap justify-content-center gap-3 mt-3">
-            {tickets.map(t => (
-              <div key={t.qr_token} className="card" style={{ width: 220 }}>
-                <div className="card-body text-center">
-                  <img src={`${API_ORIGIN}/api/events/public/ticket/${t.qr_token}/qr.png`} alt="Ticket QR code" style={{ width: '100%', maxWidth: 180 }} />
-                  <div className="fw-semibold small mt-2">{t.event_name}</div>
-                  <div className="text-muted small">{t.ticket_type_name}</div>
-                  <div className="text-muted mt-2" style={{ fontFamily: 'monospace', fontSize: '0.7rem', wordBreak: 'break-all', userSelect: 'all' }}>{t.qr_token}</div>
-                </div>
+          {tickets.length > 0 && (
+            <div style={{ marginTop: 'var(--space-7)' }}>
+              <h3 className="donate-panel__heading">Your Ticket{tickets.length > 1 ? 's' : ''}</h3>
+              <p className="form-note">Show one of these at the gate — each code is good for one admission.</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+                {tickets.map(t => (
+                  <div key={t.qr_token} className="card" style={{ width: 220 }}>
+                    <img src={`${API_ORIGIN}/api/events/public/ticket/${t.qr_token}/qr.png`} alt="Ticket QR code" style={{ width: '100%', maxWidth: 180 }} />
+                    <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginTop: 'var(--space-2)' }}>{t.event_name}</div>
+                    <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>{t.ticket_type_name}</div>
+                    <div style={{ color: 'var(--color-text-muted)', marginTop: 'var(--space-2)', fontFamily: 'monospace', fontSize: '0.7rem', wordBreak: 'break-all', userSelect: 'all' }}>{t.qr_token}</div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          )}
+
+          <div style={{ marginTop: 'var(--space-7)', paddingTop: 'var(--space-6)', borderTop: '1px solid var(--color-border)' }}>
+            <p className="form-note">Want to track this order alongside your full history?</p>
+            <Link to={`/portal/register${email ? `?email=${encodeURIComponent(email)}` : ''}`} className="btn btn--outline-dark btn--sm">
+              Create your free account
+            </Link>
           </div>
+
+          <Link to="/shop" className="btn btn--gold" style={{ marginTop: 'var(--space-6)' }}>Continue Shopping</Link>
         </div>
-      )}
-
-      <div className="mt-4 pt-4" style={{ borderTop: '1px solid #e5e7eb' }}>
-        <p className="text-muted small mb-2">Want to track this order alongside your full history?</p>
-        <Link to={`/portal/register${email ? `?email=${encodeURIComponent(email)}` : ''}`} className="btn btn-outline-primary btn-sm">
-          Create your free account
-        </Link>
       </div>
-
-      <Link to="/shop" className="btn btn-primary mt-4">Continue Shopping</Link>
     </div>
   );
 }

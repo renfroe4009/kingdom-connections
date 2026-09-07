@@ -14,59 +14,73 @@ export default function CartPage() {
   const { cart, updateItem, removeItem, loading } = useCart();
   const navigate = useNavigate();
 
-  if (loading) return <div className="text-center py-5" style={{ background: '#ffffff' }}><span className="spinner-border text-primary" /></div>;
+  if (loading) return <div className="ns-section" style={{ textAlign: 'center' }}><p>Loading…</p></div>;
 
   if (!cart.items.length) {
     return (
-      <div style={{ background: '#ffffff' }}>
-        <div className="text-center" style={{ maxWidth: 1600, margin: '0 auto', padding: '5rem 1.5rem' }}>
-          <h1 className="heading-serif" style={{ color: 'var(--brand-primary)' }}>Your cart is empty</h1>
-          <Link to="/shop" className="btn btn-primary mt-3">Continue Shopping</Link>
-        </div>
+      <div className="ns-section" style={{ textAlign: 'center' }}>
+        <h1 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-primary)' }}>Your cart is empty</h1>
+        <Link to="/shop" className="btn btn--gold" style={{ marginTop: 'var(--space-5)' }}>Continue Shopping</Link>
       </div>
     );
   }
 
   return (
-    <div style={{ background: '#ffffff' }}>
-      <div style={{ maxWidth: 1600, margin: '0 auto', padding: '2.5rem 1.5rem 4rem' }}>
-        <h1 className="heading-serif" style={{ color: 'var(--brand-primary)', marginBottom: '1.5rem' }}>Your Cart</h1>
+    <div className="ns-section">
+      <div className="ns-grid">
+        <div className="ns-block" style={{ '--col-start': 2, '--col-span': 10 }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-primary)', marginBottom: 'var(--space-6)' }}>Your Cart</h1>
 
-        <div style={{ border: '1px solid #e5e7eb', borderRadius: 16, overflow: 'hidden' }}>
-          {cart.items.map(item => {
-            const isTicket = item.item_type === 'event_ticket';
-            return (
-              <div key={item.id} style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '1rem', borderBottom: '1px solid #f1f3f5' }}>
-                <div style={{ width: 72, height: 72, borderRadius: 8, overflow: 'hidden', background: '#f3f4f6', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {isTicket
-                    ? <i className="fa-solid fa-ticket fa-lg" style={{ color: '#9ca3af' }} />
-                    : (item.image_url && <img src={resolveUrl(item.image_url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)}
+          <div className="form-card" style={{ padding: 0 }}>
+            {cart.items.map((item, i) => {
+              const isTicket = item.item_type === 'event_ticket';
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    display: 'flex', gap: 'var(--space-4)', alignItems: 'center', padding: 'var(--space-5)',
+                    borderBottom: i < cart.items.length - 1 ? '1px solid var(--color-border)' : 'none',
+                  }}
+                >
+                  <div style={{ width: 72, height: 72, borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: 'var(--color-surface)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {isTicket
+                      ? <i className="fa-solid fa-ticket fa-lg" style={{ color: 'var(--color-text-muted)' }} />
+                      : (item.image_url && <img src={resolveUrl(item.image_url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    {isTicket && <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.event_name}</div>}
+                    <div style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{item.name}</div>
+                    <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>${Number(item.unit_price).toFixed(2)} each</div>
+                    {isTicket && <div style={{ marginTop: 6 }}><TicketHoldCountdown item={item} /></div>}
+                  </div>
+                  <input
+                    type="number" min={1} value={item.qty}
+                    style={{ width: 64, padding: '0.5rem', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+                    onChange={e => updateItem(item.id, Math.max(1, Number(e.target.value) || 1))}
+                  />
+                  <div style={{ width: 80, textAlign: 'right', fontWeight: 600, color: 'var(--color-primary)' }}>${(Number(item.unit_price) * item.qty).toFixed(2)}</div>
+                  <button
+                    onClick={() => removeItem(item.id)}
+                    aria-label="Remove item"
+                    style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', fontSize: '1.25rem', cursor: 'pointer', lineHeight: 1 }}
+                  >
+                    ×
+                  </button>
                 </div>
-                <div style={{ flex: 1 }}>
-                  {isTicket && <div style={{ color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.event_name}</div>}
-                  <div style={{ fontWeight: 600 }}>{item.name}</div>
-                  <div style={{ color: '#6b7280', fontSize: '0.85rem' }}>${Number(item.unit_price).toFixed(2)} each</div>
-                  {isTicket && <div style={{ marginTop: 6 }}><TicketHoldCountdown item={item} /></div>}
-                </div>
-                <input type="number" min={1} value={item.qty} style={{ width: 64 }} className="form-control"
-                  onChange={e => updateItem(item.id, Math.max(1, Number(e.target.value) || 1))} />
-                <div style={{ width: 80, textAlign: 'right', fontWeight: 600 }}>${(Number(item.unit_price) * item.qty).toFixed(2)}</div>
-                <button className="btn btn-sm btn-light text-danger" onClick={() => removeItem(item.id)}>×</button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-6)' }}>
+            <div style={{ minWidth: 260 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xl)', fontWeight: 700, marginBottom: 'var(--space-4)', color: 'var(--color-primary)' }}>
+                <span>Subtotal</span><span>${Number(cart.subtotal).toFixed(2)}</span>
               </div>
-            );
-          })}
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-          <div style={{ minWidth: 260 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.15rem', fontWeight: 700, marginBottom: '1rem' }}>
-              <span>Subtotal</span><span>${Number(cart.subtotal).toFixed(2)}</span>
+              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-4)' }}>Shipping and tax calculated at checkout.</div>
+              <button className="btn btn--gold" style={{ width: '100%' }} onClick={() => navigate('/checkout')}>
+                Proceed to Checkout
+              </button>
             </div>
-            <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '1rem' }}>Shipping and tax calculated at checkout.</div>
-            <button className="btn btn-primary w-100" style={{ background: 'var(--brand-secondary)', color: 'var(--brand-primary)', border: 'none', fontWeight: 600, padding: '0.85rem' }}
-              onClick={() => navigate('/checkout')}>
-              Proceed to Checkout
-            </button>
           </div>
         </div>
       </div>

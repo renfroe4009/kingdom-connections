@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import api from '../../api/client.js';
 
 const CartCtx = createContext(null);
-const TOKEN_KEY = 'vcsf_cart_token';
+export const CART_TOKEN_KEY = 'kc_cart_token';
+const TOKEN_KEY = CART_TOKEN_KEY;
 
 function tokenHeader() {
   const token = localStorage.getItem(TOKEN_KEY);

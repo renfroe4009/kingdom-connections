@@ -24,8 +24,7 @@ export default function TicketHoldCountdown({ item }) {
   const low = secondsLeft <= 60;
   return (
     <span
-      className={`badge ${low ? 'bg-danger' : 'bg-warning text-dark'}`}
-      style={{ fontWeight: 600, fontSize: '0.7rem' }}
+      className={`hold-badge${low ? ' hold-badge--low' : ''}`}
       title="Your ticket is held until you complete checkout"
     >
       Held {minutes}:{String(seconds).padStart(2, '0')}

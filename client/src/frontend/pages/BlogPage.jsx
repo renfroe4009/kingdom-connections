@@ -26,7 +26,7 @@ function fmtDate(d) {
 export default function BlogPage() {
   usePageMeta({
     title: 'Blog',
-    description: "News, event recaps, and updates from the Ventura County Sheriff's Foundation.",
+    description: "News, event recaps, and updates from Kingdom Connections.",
     path: '/blog',
   });
   const [posts,   setPosts]   = useState([]);
@@ -53,7 +53,7 @@ export default function BlogPage() {
         <div className="container py-5 text-white text-center">
           <h1 className="display-4 fw-bold mb-2">News &amp; Updates</h1>
           <p className="lead opacity-75 mx-auto" style={{ maxWidth: 520 }}>
-            News, event recaps, and updates from the Ventura County Sheriff's Foundation.
+            News, event recaps, and updates from Kingdom Connections.
           </p>
         </div>
       </section>

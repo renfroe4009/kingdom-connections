@@ -25,47 +25,50 @@ export default function ProductPage() {
   }, [slug]);
 
   if (notFound) return (
-    <div className="container text-center" style={{ padding: '5rem 0' }}>
-      <h1>Product not found</h1>
-      <Link to="/shop" className="btn btn-primary mt-3">Back to Shop</Link>
+    <div className="ns-section" style={{ textAlign: 'center' }}>
+      <h1 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-primary)' }}>Product not found</h1>
+      <Link to="/shop" className="btn btn--gold" style={{ marginTop: 'var(--space-5)' }}>Back to Shop</Link>
     </div>
   );
-  if (!product) return <div className="text-center py-5"><span className="spinner-border text-primary" /></div>;
+  if (!product) return <div className="ns-section" style={{ textAlign: 'center' }}><p>Loading…</p></div>;
 
   const images = product.images?.length ? product.images : [{ url: product.image_url }];
   const outOfStock = product.track_inventory && product.stock_qty <= 0;
 
   return (
-    <div className="container" style={{ paddingTop: '2.5rem', paddingBottom: '4rem' }}>
-      <div className="row g-4">
-        <div className="col-lg-6">
-          <div style={{ height: 420, borderRadius: 24, overflow: 'hidden', background: '#f3f4f6', marginBottom: 12 }}>
-            {images[activeImg]?.url && <img src={resolveUrl(images[activeImg].url)} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+    <div className="ns-section">
+      <div className="ns-grid">
+        <div className="ns-block" style={{ '--col-start': 1, '--col-span': 6 }}>
+          <div className="card__media card__media--square" style={{ marginBottom: 'var(--space-3)' }}>
+            {images[activeImg]?.url && <img src={resolveUrl(images[activeImg].url)} alt={product.name} />}
           </div>
           {images.length > 1 && (
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
               {images.map((img, i) => (
-                <button key={i} onClick={() => setActiveImg(i)} style={{ width: 64, height: 64, borderRadius: 8, overflow: 'hidden', border: i === activeImg ? '2px solid var(--brand-primary)' : '1px solid #e5e7eb', padding: 0, cursor: 'pointer' }}>
+                <button
+                  key={i} onClick={() => setActiveImg(i)}
+                  style={{ width: 64, height: 64, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: i === activeImg ? '2px solid var(--color-accent)' : '1px solid var(--color-border)', padding: 0, cursor: 'pointer' }}
+                >
                   <img src={resolveUrl(img.url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 </button>
               ))}
             </div>
           )}
         </div>
-        <div className="col-lg-6">
-          <h1 className="heading-serif" style={{ color: 'var(--brand-primary)', fontSize: '2rem', letterSpacing: '-1px' }}>{product.name}</h1>
-          <div style={{ marginBottom: '1rem' }}><PriceDisplay price={product.price} comparePrice={product.compare_price} size="1.5rem" /></div>
-          {product.short_desc && <p style={{ color: '#4b5563' }}>{product.short_desc}</p>}
-          {product.description && <div style={{ color: '#4b5563', marginTop: '1rem' }} dangerouslySetInnerHTML={{ __html: product.description }} />}
+        <div className="ns-block" style={{ '--col-start': 7, '--col-span': 6 }}>
+          <h1 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-primary)', fontSize: 'var(--text-3xl)' }}>{product.name}</h1>
+          <div style={{ margin: 'var(--space-3) 0' }}><PriceDisplay price={product.price} comparePrice={product.compare_price} size="1.5rem" /></div>
+          {product.short_desc && <p style={{ color: 'var(--color-text-muted)' }}>{product.short_desc}</p>}
+          {product.description && <div style={{ color: 'var(--color-text-muted)', marginTop: 'var(--space-4)' }} dangerouslySetInnerHTML={{ __html: product.description }} />}
 
-          <div style={{ marginTop: '1.5rem', maxWidth: 320 }}>
+          <div style={{ marginTop: 'var(--space-6)', maxWidth: 320 }}>
             {outOfStock ? (
-              <div className="alert alert-secondary">Out of stock</div>
+              <p className="form-note">Out of stock</p>
             ) : (
               <>
-                <div className="d-flex align-items-center gap-2 mb-3">
-                  <label className="form-label mb-0">Qty</label>
-                  <input type="number" min={1} className="form-control" style={{ width: 80 }} value={qty} onChange={e => setQty(Math.max(1, Number(e.target.value) || 1))} />
+                <div className="form-field" style={{ maxWidth: 120 }}>
+                  <label>Qty</label>
+                  <input type="number" min={1} value={qty} onChange={e => setQty(Math.max(1, Number(e.target.value) || 1))} />
                 </div>
                 <AddToCartButton productId={product.id} qty={qty} />
               </>
