@@ -13,8 +13,8 @@ import { useState } from 'react';
 import { useEditor, useNode } from '@craftjs/core';
 import api from '../../api/client.js';
 import DonationCheckout from '../../frontend/components/DonationCheckout.jsx';
-import { ColorField, FieldGroup, RepeaterField, TextField, TextareaField, ToggleField } from '../fields/index.jsx';
-import { IDENTITY_DEFAULTS, cssVars, cx, useDomIdentity, useNodeRef } from './nodeUtils.js';
+import { FieldGroup, RepeaterField, TextField, TextareaField, ToggleField } from '../fields/index.jsx';
+import { IDENTITY_DEFAULTS, cx, useDomIdentity, useNodeRef } from './nodeUtils.js';
 
 export default function DonationBlock({
   heading,
@@ -24,8 +24,9 @@ export default function DonationBlock({
   fundSlug,
   buttonLabel,
   thankYouText,
-  accentColor,
   coverFeesOption,
+  coverFeesLabel,
+  disclaimerText,
 }) {
   const ref = useNodeRef();
   const { enabled: editing } = useEditor((state) => ({ enabled: state.options.enabled }));
@@ -64,15 +65,13 @@ export default function DonationBlock({
     }
   }
 
-  const style = cssVars({ '--bx-btn-bg': accentColor });
-
   return (
-    <div ref={ref} id={domId} className={cx('bx-donate', customClass)} style={style}>
-      {heading && <h3 className="bx-heading" style={{ '--bx-heading-size': '1.5rem' }}>{heading}</h3>}
-      {blurb && <p className="bx-text" style={{ marginTop: 8 }}>{blurb}</p>}
+    <div ref={ref} id={domId} className={cx('form-card', customClass)}>
+      {heading && <h3 className="donate-panel__heading">{heading}</h3>}
+      {blurb && <p className="donate-panel__blurb">{blurb}</p>}
 
       {done ? (
-        <div className="bx-editor-note">{thankYouText}</div>
+        <div className="form-note">{thankYouText}</div>
       ) : checkout && !editing ? (
         <DonationCheckout
           invoiceId={checkout.invoiceId}
@@ -85,13 +84,13 @@ export default function DonationBlock({
           onCancel={() => setCheckout(null)}
         />
       ) : (
-        <form className="bx-form" onSubmit={start} style={{ marginTop: 16 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <form onSubmit={start}>
+          <div className="donate-amounts">
             {presets.map((preset, index) => (
               <button
                 key={index}
                 type="button"
-                className={cx('bx-btn', Number(preset.value) !== amount || custom ? 'bx-btn--outline' : null)}
+                className={cx('amount-pill', Number(preset.value) === amount && !custom ? 'amount-pill--active' : null)}
                 onClick={() => { setAmount(Number(preset.value)); setCustom(''); }}
               >
                 {preset.label || `$${preset.value}`}
@@ -100,39 +99,41 @@ export default function DonationBlock({
           </div>
 
           {allowCustom && (
-            <div>
+            <div className="form-field">
               <label htmlFor={`${domId}-custom`}>Other amount</label>
               <input id={`${domId}-custom`} type="number" min="1" step="1" value={custom} placeholder="0.00" onChange={(e) => setCustom(e.target.value)} />
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
+          <div className="form-row-2">
+            <div className="form-field">
               <label htmlFor={`${domId}-first`}>First name</label>
               <input id={`${domId}-first`} value={donor.first_name} onChange={(e) => setDonor({ ...donor, first_name: e.target.value })} />
             </div>
-            <div>
+            <div className="form-field">
               <label htmlFor={`${domId}-last`}>Last name</label>
               <input id={`${domId}-last`} value={donor.last_name} onChange={(e) => setDonor({ ...donor, last_name: e.target.value })} />
             </div>
           </div>
-          <div>
+          <div className="form-field">
             <label htmlFor={`${domId}-email`}>Email</label>
             <input id={`${domId}-email`} type="email" required value={donor.email} onChange={(e) => setDonor({ ...donor, email: e.target.value })} />
           </div>
 
           {coverFeesOption && (
-            <label className="bxf__toggle" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <label className="donate-checkbox">
               <input type="checkbox" checked={coverFees} onChange={(e) => setCoverFees(e.target.checked)} />
-              <span>Add a little to cover processing fees</span>
+              <span>{coverFeesLabel}</span>
             </label>
           )}
 
-          {error && <div style={{ color: '#b91c1c', fontSize: '0.9rem' }}>{error}</div>}
+          {error && <div className="form-error">{error}</div>}
 
-          <button type="submit" className="bx-btn" disabled={busy || editing}>
+          <button type="submit" className="btn btn--gold" disabled={busy || editing}>
             {busy ? 'Starting…' : buttonLabel}
           </button>
+
+          {disclaimerText && <p className="form-note">{disclaimerText}</p>}
 
           {editing && (
             <div className="bx-editor-note">
@@ -173,6 +174,7 @@ function DonationSettings() {
         />
         <ToggleField label="Allow a custom amount" value={props.allowCustom} onChange={p('allowCustom')} />
         <ToggleField label="Offer to cover processing fees" value={props.coverFeesOption} onChange={p('coverFeesOption')} />
+        <TextField label="Cover-fees checkbox label" value={props.coverFeesLabel} onChange={p('coverFeesLabel')} />
         <TextField
           label="Fund slug"
           value={props.fundSlug}
@@ -181,8 +183,8 @@ function DonationSettings() {
         />
       </FieldGroup>
 
-      <FieldGroup title="Style">
-        <ColorField label="Button colour" value={props.accentColor} onChange={p('accentColor')} />
+      <FieldGroup title="Disclaimer">
+        <TextareaField label="Disclaimer text" value={props.disclaimerText} onChange={p('disclaimerText')} rows={2} />
       </FieldGroup>
 
       <FieldGroup title="Identity" defaultOpen={false}>
@@ -207,10 +209,11 @@ DonationBlock.craft = {
     ],
     allowCustom: true,
     coverFeesOption: true,
+    coverFeesLabel: 'Add a little extra to cover processing fees',
     fundSlug: '',
     buttonLabel: 'Continue to payment',
     thankYouText: 'Thank you — your gift has been received.',
-    accentColor: '',
+    disclaimerText: 'Payments processed securely. A receipt is sent to your email automatically.',
   },
   related: { settings: DonationSettings },
 };
