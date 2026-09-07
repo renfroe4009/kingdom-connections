@@ -8,6 +8,7 @@ import VaultProfilesWidget from '../components/VaultProfilesWidget.jsx';
 import FormErrorBanner from '../../components/FormErrorBanner.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
+import { formatGateway } from '../../utils/gateway.js';
 import { useConfirm, usePrompt } from '../../hooks/useConfirm.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 
@@ -486,7 +487,7 @@ export default function InvoiceDetail() {
                       {payments.map((p) => (
                         <tr key={p.id}>
                           <td>{p.received_at ? new Date(p.received_at).toLocaleString() : new Date(p.created_at).toLocaleString()}</td>
-                          <td>{p.gateway}</td>
+                          <td>{formatGateway(p.gateway)}</td>
                           <td>{p.method || '—'}</td>
                           <td className="text-end fw-semibold">{fmt(p.amount)}</td>
                           <td>

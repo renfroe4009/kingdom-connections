@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/client.js';
 import PageHeader from '../../components/PageHeader.jsx';
+import { formatGateway } from '../../utils/gateway.js';
 
 const fmtMoney = (n) =>
   `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -396,7 +397,7 @@ export default function BillingReconciliationReport() {
                               </button>
                             </td>
                             <td className="text-nowrap">{new Date(r.started_at).toLocaleString()}</td>
-                            <td className="text-capitalize">{r.gateway}</td>
+                            <td>{formatGateway(r.gateway)}</td>
                             <td className="text-nowrap text-muted">
                               {r.window_start ? new Date(r.window_start).toLocaleDateString() : ''}
                               {' → '}
@@ -485,7 +486,7 @@ export default function BillingReconciliationReport() {
                     {mismatches.map((m) => (
                       <tr key={m.id} className={m.resolved ? 'opacity-50' : ''}>
                         <td>{m.batch_date}</td>
-                        <td className="text-capitalize">{m.gateway}</td>
+                        <td>{formatGateway(m.gateway)}</td>
                         <td className="font-monospace small">{m.gateway_txn_id || '—'}</td>
                         <td className="text-end">{fmtMoney(m.gateway_amount)}</td>
                         <td>

@@ -6,6 +6,7 @@ import Modal from '../../components/Modal.jsx';
 import FormErrorBanner from '../../components/FormErrorBanner.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
+import { formatGateway } from '../../utils/gateway.js';
 import { useConfirm, usePrompt } from '../../hooks/useConfirm.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 
@@ -389,7 +390,7 @@ export default function TransactionsPage() {
                         ) : '—'}
                       </td>
                       <td>{p.contact_name || p.organization_name || '—'}</td>
-                      <td className="text-uppercase small">{p.gateway}</td>
+                      <td className="small">{formatGateway(p.gateway)}</td>
                       <td className="small text-muted">
                         {p.card_brand ? `${p.card_brand} •••• ${p.card_last4 || ''}` : '—'}
                       </td>

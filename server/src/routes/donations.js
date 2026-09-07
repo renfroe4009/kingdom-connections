@@ -598,11 +598,12 @@ const DONATION_SELECT = `
 
 router.get('/admin', requireAuth, requirePermission('donations.read'), async (req, res, next) => {
   try {
-    const { fund_id, contact_id, start_date, end_date, page = 1, pageSize = 50 } = req.query;
+    const { fund_id, contact_id, organization_id, start_date, end_date, page = 1, pageSize = 50 } = req.query;
     const where = [];
     const params = {};
-    if (fund_id)    { where.push('d.fund_id = :fund_id'); params.fund_id = fund_id; }
-    if (contact_id) { where.push('d.contact_id = :contact_id'); params.contact_id = contact_id; }
+    if (fund_id)         { where.push('d.fund_id = :fund_id'); params.fund_id = fund_id; }
+    if (contact_id)      { where.push('d.contact_id = :contact_id'); params.contact_id = contact_id; }
+    if (organization_id) { where.push('d.organization_id = :organization_id'); params.organization_id = organization_id; }
     if (start_date) { where.push('d.created_at >= :start_date'); params.start_date = start_date; }
     if (end_date)   { where.push('d.created_at <= :end_date'); params.end_date = `${end_date} 23:59:59`; }
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';

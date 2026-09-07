@@ -14,6 +14,12 @@ router.get('/', requirePermission('subscriptions.read'), async (req, res, next) 
   try {
     const scopeIds = await resolveOwnerScope(req.user);
     const scopeClause = contactOwnerClause(scopeIds, 's.contact_id');
+    const { contact_id, organization_id } = req.query;
+    const extraWhere = [];
+    const extraParams = {};
+    if (contact_id)      { extraWhere.push('s.contact_id = :contact_id'); extraParams.contact_id = contact_id; }
+    if (organization_id) { extraWhere.push('s.organization_id = :organization_id'); extraParams.organization_id = organization_id; }
+    const whereParts = [scopeClause, ...extraWhere].filter(Boolean);
 
     // Pull subscriptions plus a computed per-run total so the list can render
     // an "Amount" column without firing N queries from the client.
@@ -53,8 +59,9 @@ router.get('/', requirePermission('subscriptions.read'), async (req, res, next) 
             WHERE i.subscription_id IS NOT NULL
             GROUP BY i.subscription_id
          ) pay ON pay.subscription_id = s.id
-        ${scopeClause ? `WHERE ${scopeClause}` : ''}
-        ORDER BY s.next_run_date ASC, s.id DESC`);
+        ${whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : ''}
+        ORDER BY s.next_run_date ASC, s.id DESC`,
+      extraParams);
     res.json({ rows });
   } catch (err) { next(err); }
 });

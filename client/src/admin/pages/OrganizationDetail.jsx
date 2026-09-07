@@ -13,10 +13,12 @@ import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
 import { isBlank } from '../../utils/validation.js';
+import { formatGateway } from '../../utils/gateway.js';
 import FormErrorBanner from '../../components/FormErrorBanner.jsx';
 import TagEditor from '../components/TagEditor.jsx';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import MergeModal from '../components/MergeModal.jsx';
+import RecordDonationModal from '../components/RecordDonationModal.jsx';
 
 const emptyContact = { first_name: '', last_name: '', email: '', phone: '', title: '' };
 const emptyDeal = { name: '', amount: '', expected_close_date: '', pipeline_id: null, stage_id: null };
@@ -39,6 +41,9 @@ export default function OrganizationDetail() {
   const [noteBody, setNoteBody] = useState('');
   const [timeline, setTimeline] = useState([]);
   const [pledges, setPledges] = useState([]);
+  const [donations, setDonations] = useState({ rows: [], total: 0 });
+  const [memberships, setMemberships] = useState([]);
+  const [showDonate, setShowDonate] = useState(false);
 
   // Add Contact modal state
   const [contactShow, setContactShow] = useState(false);
@@ -79,6 +84,8 @@ export default function OrganizationDetail() {
     const { data } = await api.get(`/organizations/${id}`);
     setData(data);
     api.get('/pledges', { params: { organization_id: id } }).then((r) => setPledges(r.data.rows || [])).catch(() => {});
+    api.get('/donations/admin', { params: { organization_id: id, pageSize: 10 } }).then((r) => setDonations(r.data)).catch(() => {});
+    api.get('/subscriptions', { params: { organization_id: id } }).then((r) => setMemberships((r.data.rows || []).filter((s) => s.membership_tier_id))).catch(() => {});
     const { data: notesData } = await api.get('/notes', { params: { entity_type: 'organization', entity_id: id } });
     setNotes(notesData);
     api.get(`/organizations/${id}/timeline`).then((r) => setTimeline(r.data.events || [])).catch(() => {});
@@ -337,6 +344,11 @@ export default function OrganizationDetail() {
         actions={
           <>
             <Link to="/admin/organizations" className="btn btn-light">← Back</Link>
+            {can('donations.write') && (
+              <button className="btn btn-primary ms-2" onClick={() => setShowDonate(true)}>
+                <iconify-icon icon="solar:hand-heart-line-duotone" class="me-1"></iconify-icon> Donate
+              </button>
+            )}
             {can('organizations.write') && (
               <button className="btn btn-primary ms-2" onClick={openEdit}>
                 <iconify-icon icon="solar:pen-new-square-line-duotone" class="me-1"></iconify-icon> Edit
@@ -396,6 +408,46 @@ export default function OrganizationDetail() {
             canEdit={can('organizations.write')}
             onChange={(newTags) => setData((d) => ({ ...d, tags: newTags }))}
           />
+          {donations.rows.length > 0 && (
+            <div className="card mt-3">
+              <div className="card-body">
+                <h6 className="fw-bold text-uppercase small text-muted mb-2">Giving History</h6>
+                <ul className="list-unstyled small mb-0">
+                  {donations.rows.map((d) => (
+                    <li key={d.id} className="py-1 border-bottom">
+                      <div className="d-flex justify-content-between">
+                        <span>{d.fund_name || 'Undesignated'}</span>
+                        <strong>${Number(d.amount).toFixed(2)}</strong>
+                      </div>
+                      <div className="text-muted">{new Date(d.created_at).toLocaleDateString()} · {d.payment_status}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {memberships.length > 0 && (
+            <div className="card mt-3">
+              <div className="card-body">
+                <h6 className="fw-bold text-uppercase small text-muted mb-2">Membership</h6>
+                <ul className="list-unstyled small mb-0">
+                  {memberships.map((s) => (
+                    <li key={s.id} className="py-1 border-bottom">
+                      <div className="d-flex justify-content-between">
+                        <Link to={`/admin/subscriptions/${s.id}`}>{s.name}</Link>
+                        <span className={`badge bg-${s.status === 'active' ? 'success' : s.status === 'paused' ? 'warning' : 'secondary'}-subtle text-${s.status === 'active' ? 'success' : s.status === 'paused' ? 'warning' : 'secondary'}`}>{s.status}</span>
+                      </div>
+                      <div className="text-muted">
+                        Next renewal {s.next_run_date || '—'} · {Number(s.payment_count) || 0} charge{Number(s.payment_count) === 1 ? '' : 's'} · ${Number(s.captured_total || 0).toFixed(2)} total
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           {pledges.length > 0 && (
             <div className="card mt-3">
               <div className="card-body">
@@ -594,7 +646,7 @@ export default function OrganizationDetail() {
                         <tr key={p.id}>
                           <td className="small">{new Date(p.received_at || p.created_at).toLocaleDateString()}</td>
                           <td><Link to={`/admin/invoices/${p.invoice_id}`}>{p.invoice_number}</Link></td>
-                          <td className="small">{p.gateway}</td>
+                          <td className="small">{formatGateway(p.gateway)}</td>
                           <td className="small">
                             {p.method || 'card'}
                             {p.card_last4 ? <span className="text-muted"> ****{p.card_last4}</span> : null}
@@ -981,6 +1033,14 @@ export default function OrganizationDetail() {
           onMerged={() => { setMergePair(null); navigate('/admin/organizations'); }}
         />
       )}
+
+      <RecordDonationModal
+        show={showDonate}
+        onClose={() => setShowDonate(false)}
+        lockedOrganizationId={Number(id)}
+        lockedDonorLabel={organization.name}
+        onSaved={() => { setShowDonate(false); load(); }}
+      />
 
       {confirmDialog}
     </div>

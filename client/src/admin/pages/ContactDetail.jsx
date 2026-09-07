@@ -12,6 +12,7 @@ import QuickCreateOrg from '../components/QuickCreateOrg.jsx';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import TagEditor from '../components/TagEditor.jsx';
 import MergeModal from '../components/MergeModal.jsx';
+import RecordDonationModal from '../components/RecordDonationModal.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { useIntegrations } from '../context/IntegrationsContext.jsx';
@@ -53,8 +54,10 @@ export default function ContactDetail() {
   const [household, setHousehold] = useState(null);
   const [softCredits, setSoftCredits] = useState([]);
   const [donations, setDonations] = useState({ rows: [], total: 0 });
+  const [memberships, setMemberships] = useState([]);
   const [pledges, setPledges] = useState([]);
   const [timeline, setTimeline] = useState([]);
+  const [showDonate, setShowDonate] = useState(false);
   const [showHousehold, setShowHousehold] = useState(false);
   const [householdName, setHouseholdName] = useState('');
   const [addMemberId, setAddMemberId] = useState('');
@@ -71,6 +74,7 @@ export default function ContactDetail() {
     api.get(`/contacts/${id}/household`).then((r) => setHousehold(r.data)).catch(() => setHousehold(null));
     api.get(`/contacts/${id}/soft-credits`).then((r) => setSoftCredits(r.data.rows || [])).catch(() => {});
     api.get('/donations/admin', { params: { contact_id: id, pageSize: 10 } }).then((r) => setDonations(r.data)).catch(() => {});
+    api.get('/subscriptions', { params: { contact_id: id } }).then((r) => setMemberships((r.data.rows || []).filter((s) => s.membership_tier_id))).catch(() => {});
     api.get('/pledges', { params: { contact_id: id } }).then((r) => setPledges(r.data.rows || [])).catch(() => {});
     api.get(`/contacts/${id}/timeline`).then((r) => setTimeline(r.data.events || [])).catch(() => {});
   }
@@ -235,6 +239,11 @@ export default function ContactDetail() {
                 <iconify-icon icon="solar:chat-line-line-duotone" class="me-1"></iconify-icon> SMS
               </button>
             )}
+            {can('donations.write') && (
+              <button className="btn btn-primary ms-2" onClick={() => setShowDonate(true)}>
+                <iconify-icon icon="solar:hand-heart-line-duotone" class="me-1"></iconify-icon> Donate
+              </button>
+            )}
             {can('contacts.write') && (
               <button className="btn btn-primary ms-2" onClick={openEdit}>
                 <iconify-icon icon="solar:pen-new-square-line-duotone" class="me-1"></iconify-icon> Edit
@@ -374,6 +383,27 @@ export default function ContactDetail() {
                         <strong>${Number(d.amount).toFixed(2)}</strong>
                       </div>
                       <div className="text-muted">{new Date(d.created_at).toLocaleDateString()} · {d.payment_status}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {memberships.length > 0 && (
+            <div className="card mt-3">
+              <div className="card-body">
+                <h6 className="fw-bold text-uppercase small text-muted mb-2">Membership</h6>
+                <ul className="list-unstyled small mb-0">
+                  {memberships.map((s) => (
+                    <li key={s.id} className="py-1 border-bottom">
+                      <div className="d-flex justify-content-between">
+                        <Link to={`/admin/subscriptions/${s.id}`}>{s.name}</Link>
+                        <span className={`badge bg-${s.status === 'active' ? 'success' : s.status === 'paused' ? 'warning' : 'secondary'}-subtle text-${s.status === 'active' ? 'success' : s.status === 'paused' ? 'warning' : 'secondary'}`}>{s.status}</span>
+                      </div>
+                      <div className="text-muted">
+                        Next renewal {s.next_run_date || '—'} · {Number(s.payment_count) || 0} charge{Number(s.payment_count) === 1 ? '' : 's'} · ${Number(s.captured_total || 0).toFixed(2)} total
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -675,6 +705,14 @@ export default function ContactDetail() {
           onMerged={() => { setMergePair(null); navigate('/admin/contacts'); }}
         />
       )}
+
+      <RecordDonationModal
+        show={showDonate}
+        onClose={() => setShowDonate(false)}
+        lockedContactId={Number(id)}
+        lockedDonorLabel={`${contact.first_name || ''} ${contact.last_name || ''}`.trim()}
+        onSaved={() => { setShowDonate(false); loadFundraising(); }}
+      />
 
       {confirmDialog}
     </div>

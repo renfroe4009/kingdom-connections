@@ -7,6 +7,7 @@ import FormErrorBanner from '../../components/FormErrorBanner.jsx';
 import SavedPaymentMethods from '../components/SavedPaymentMethods.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
+import { formatGateway } from '../../utils/gateway.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 
@@ -171,7 +172,7 @@ export default function SubscriptionDetail() {
                 <dt className="col-5">Start</dt><dd className="col-7">{sub.start_date}</dd>
                 <dt className="col-5">End</dt><dd className="col-7">{sub.end_date || '—'}</dd>
                 <dt className="col-5">Auto-charge</dt><dd className="col-7">{sub.auto_charge ? 'Yes' : 'No'}</dd>
-                <dt className="col-5">Gateway</dt><dd className="col-7">{sub.gateway}</dd>
+                <dt className="col-5">Gateway</dt><dd className="col-7">{formatGateway(sub.gateway)}</dd>
                 <dt className="col-5">Tax / Discount</dt>
                 <dd className="col-7">{Number(sub.tax_rate)}% / {Number(sub.discount_rate)}%</dd>
               </dl>
@@ -281,7 +282,7 @@ export default function SubscriptionDetail() {
                                 ? <Link to={`/admin/invoices/${p.invoice_id}`}>{p.invoice_number}</Link>
                                 : '—'}
                             </td>
-                            <td className="text-uppercase small">{p.gateway}</td>
+                            <td className="small">{formatGateway(p.gateway)}</td>
                             <td className="text-capitalize small">{p.method}</td>
                             <td className="small text-muted">
                               {p.card_brand ? `${p.card_brand} •••• ${p.card_last4 || ''}` : '—'}

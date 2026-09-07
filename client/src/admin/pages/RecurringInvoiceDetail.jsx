@@ -8,6 +8,7 @@ import SavedPaymentMethods from '../components/SavedPaymentMethods.jsx';
 import FormErrorBanner from '../../components/FormErrorBanner.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
+import { formatGateway } from '../../utils/gateway.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 
@@ -396,7 +397,7 @@ export default function RecurringInvoiceDetail() {
                               ? <Link to={`/admin/invoices/${p.invoice_id}`}>{p.invoice_number}</Link>
                               : '—'}
                           </td>
-                          <td className="text-uppercase">{p.gateway}</td>
+                          <td>{formatGateway(p.gateway)}</td>
                           <td className="text-muted">
                             {p.card_brand ? `${p.card_brand} ••••${p.card_last4 || ''}` : p.method || '—'}
                           </td>
