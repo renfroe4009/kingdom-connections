@@ -6,7 +6,6 @@ dist/
 *.log
 .DS_Store
 .vercel
-.env*
 
 # VS Code Local History — snapshots every edited file, including server/.env.
 # Currently caught incidentally by the .env* rule above (snapshot filenames

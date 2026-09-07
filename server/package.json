@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "db:schema": "mysql -u $DB_USER -p$DB_PASSWORD -h $DB_HOST -P $DB_PORT < ../db/schema.sql",
-    "db:seed": "mysql -u $DB_USER -p$DB_PASSWORD -h $DB_HOST -P $DB_PORT localcrm < ../db/seed.sql",
+    "db:schema": "node scripts/db-load.js ../../db/schema.sql",
+    "db:seed": "node scripts/db-load.js ../../db/seed.sql",
     "check:sql": "node scripts/check-sql-safety.js"
   },
   "dependencies": {
