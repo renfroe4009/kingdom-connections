@@ -26,12 +26,19 @@ const moduleSettings = require('./moduleSettings');
 // never need to know how the logo was actually stored.
 async function resolveBusinessBranding() {
   const [[biz]] = await db.query(
-    `SELECT business_name, tax_ein, logo_web_url, logo_web_storage_key, logo_web_storage_driver
+    `SELECT business_name, tax_ein, primary_color, secondary_color,
+            logo_web_url, logo_web_storage_key, logo_web_storage_driver
        FROM business_settings WHERE id = 1`
   );
   let logoUrl = '';
   try { if (biz) logoUrl = await resolveBusinessLogoUrl(biz); } catch (_e) { /* logo optional */ }
-  return { name: biz?.business_name || '', taxEin: biz?.tax_ein || '', logoUrl };
+  return {
+    name: biz?.business_name || '',
+    taxEin: biz?.tax_ein || '',
+    logoUrl,
+    primaryColor: biz?.primary_color || '#0A1F3D',
+    secondaryColor: biz?.secondary_color || '#C9A227',
+  };
 }
 
 async function logoUrlToBuffer(logoUrl) {
@@ -127,6 +134,8 @@ async function loadReceiptDataInternal(where, params) {
     tax_ein: branding.taxEin,
     logo_url: branding.logoUrl,
     logo_buffer: await logoUrlToBuffer(branding.logoUrl),
+    primary_color: branding.primaryColor,
+    secondary_color: branding.secondaryColor,
   };
   try {
     const [[smtp]] = await db.query(
@@ -261,7 +270,7 @@ function renderReceiptHtml({ payment, lines, company }) {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Receipt ${receiptNo}</title>
 <style>
-  :root { --brand: #F05523; --ink: #212529; --muted: #6c757d; --line: #e5e7eb; }
+  :root { --brand: ${company.primary_color || '#0A1F3D'}; --ink: #212529; --muted: #6c757d; --line: #e5e7eb; }
   * { box-sizing: border-box; }
   /* print-color-adjust forces backgrounds (state pill, brand bar) to render in
      "Save as PDF" — without it Chrome/Safari strip them by default. */
@@ -415,7 +424,7 @@ async function renderReceiptPdf({ payment, lines, company }) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const brand = '#F05523';
+    const brand = company.primary_color || '#0A1F3D';
     const ink = '#212529';
     const muted = '#6c757d';
     const receiptNo = `RCPT-${String(payment.id).padStart(6, '0')}`;
@@ -645,6 +654,8 @@ async function loadYearEndStatementData(contactId, year) {
     tax_ein: branding.taxEin,
     logo_url: branding.logoUrl,
     logo_buffer: await logoUrlToBuffer(branding.logoUrl),
+    primary_color: branding.primaryColor,
+    secondary_color: branding.secondaryColor,
   };
   try {
     const [[smtp]] = await db.query(
@@ -666,7 +677,7 @@ function renderYearEndStatementPdf({ contact, year, gifts, totalGiven, totalDedu
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const brand = '#F05523';
+    const brand = company.primary_color || '#0A1F3D';
     const ink = '#212529';
     const muted = '#6c757d';
     const leftX = 48;

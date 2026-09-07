@@ -54,38 +54,42 @@ async function streamToBase64DataUri(stream, storageKey) {
 // uploaded directly) renders as a broken image in every templated email.
 async function resolveBusinessLogoUrl(biz) {
   if (biz.logo_web_storage_key) {
-    return getEmailLogoUrl(biz.logo_web_storage_key, biz.logo_web_storage_driver);
+    try {
+      return await getEmailLogoUrl(biz.logo_web_storage_key, biz.logo_web_storage_driver);
+    } catch (err) {
+      // Direct-upload file unreadable (e.g. missing on local disk, volume
+      // reset) — fall through to logo_web_url below instead of the dead-end
+      // API-path fallback getEmailLogoUrl used to return, which reads this
+      // exact same broken source and is guaranteed to also fail.
+      // eslint-disable-next-line no-console
+      console.warn('[templates] logo storage key unreadable, falling back to logo_web_url:', err.message);
+    }
   }
   if (biz.logo_web_url) {
     if (/^https?:\/\//i.test(biz.logo_web_url)) return biz.logo_web_url;
     const apiBase = process.env.API_BASE_URL || 'http://localhost:4000';
     return `${apiBase}${biz.logo_web_url}`;
   }
-  return '';
+  // Last resort — neither source worked or was set.
+  const apiBase = process.env.API_BASE_URL || 'http://localhost:4000';
+  return `${apiBase}/api/settings/business/logo/web`;
 }
 
 async function getEmailLogoUrl(storageKey, driver) {
   if (!storageKey) return '';
-  try {
-    const got = await storage.getReadable({
-      driver: driver || 'local',
-      key:    storageKey,
-      // S3: use a 7-day signed URL (max AWS allows) so the image still loads
-      // if the recipient opens the email days after it was sent.
-      expiresIn: 7 * 24 * 3600,
-    });
-    if (got.type === 'redirect') {
-      // S3 signed URL — publicly reachable for 7 days
-      return got.url;
-    }
-    // Local storage — embed as base64 data URI
-    return await streamToBase64DataUri(got.stream, storageKey);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[templates] logo embed failed, falling back to API URL:', err.message);
-    const apiBase = process.env.API_BASE_URL || 'http://localhost:4000';
-    return `${apiBase}/api/settings/business/logo/web`;
+  const got = await storage.getReadable({
+    driver: driver || 'local',
+    key:    storageKey,
+    // S3: use a 7-day signed URL (max AWS allows) so the image still loads
+    // if the recipient opens the email days after it was sent.
+    expiresIn: 7 * 24 * 3600,
+  });
+  if (got.type === 'redirect') {
+    // S3 signed URL — publicly reachable for 7 days
+    return got.url;
   }
+  // Local storage — embed as base64 data URI
+  return await streamToBase64DataUri(got.stream, storageKey);
 }
 
 function getPath(obj, path) {
