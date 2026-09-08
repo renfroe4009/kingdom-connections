@@ -214,6 +214,11 @@ router.put('/:id', requirePermission('users.manage'), async (req, res, next) => 
     if (data.password) {
       fields.push('password_hash = :password_hash');
       params.password_hash = await bcrypt.hash(data.password, 10);
+      // Security remediation H-05 — an admin-initiated password change
+      // must invalidate the target's existing sessions the same way a
+      // self-service reset does, otherwise a compromised account stays
+      // logged in on every device until its token naturally expires.
+      fields.push('token_epoch = token_epoch + 1');
     }
     if (fields.length) {
       await db.query(`UPDATE users SET ${fields.join(', ')} WHERE id = :id`, params);
@@ -261,7 +266,7 @@ router.post('/:id/impersonate', requirePermission('users.impersonate'), async (r
 
     // Load the target user
     const [[target]] = await db.query(
-      `SELECT id, email, first_name, last_name, is_active FROM users WHERE id = :id`,
+      `SELECT id, email, first_name, last_name, is_active, token_epoch FROM users WHERE id = :id`,
       { id: targetId }
     );
     if (!target || !target.is_active) {
@@ -274,10 +279,19 @@ router.post('/:id/impersonate', requirePermission('users.impersonate'), async (r
       return res.status(403).json({ error: 'User is not within your reporting scope' });
     }
 
-    // Issue a short-lived impersonation token (2 hours)
+    // Issue a short-lived impersonation token (2 hours).
+    // Security remediation H-05 — this previously signed the token with
+    // `sub: target.id` (via `{ ...target }` spreading over `user.id`),
+    // making every impersonated action indistinguishable in the audit
+    // trail from the target's own — exactly the audit's finding. `sub`
+    // must always identify the real actor; `loadUserFromRequest` resolves
+    // *which user's data to load* from `impersonating_as`, not `sub`.
+    // `epoch` is deliberately the TARGET's token_epoch (matching
+    // `loadId`, not the actor) — a password reset on the impersonated
+    // account should end the impersonation session too.
     const token = signToken(
-      { ...target, impersonating_as: targetId },
-      { impersonating_as: targetId, expiresIn: '2h' }
+      { id: req.user.id, email: req.user.email },
+      { impersonating_as: targetId, epoch: target.token_epoch, expiresIn: '2h' }
     );
 
     // Log the impersonation (security remediation M-07 — non-optional; a

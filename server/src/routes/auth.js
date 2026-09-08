@@ -43,7 +43,7 @@ router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
     const [rows] = await db.query(
-      `SELECT id, email, password_hash, first_name, last_name, is_active, contact_id, default_dashboard
+      `SELECT id, email, password_hash, first_name, last_name, is_active, contact_id, default_dashboard, token_epoch
          FROM users WHERE email = :email LIMIT 1`,
       { email }
     );
@@ -65,8 +65,8 @@ router.post('/login', loginLimiter, async (req, res, next) => {
       { uid: user.id }
     );
 
-    const token = signToken(user);
-    const { password_hash, ...safe } = user;
+    const token = signToken(user, { epoch: user.token_epoch });
+    const { password_hash, token_epoch, ...safe } = user;
 
     // Hydrate roles + permissions so the client's `can()` works immediately after login.
     const [roleRows] = await db.query(
@@ -107,14 +107,24 @@ router.put('/me/dashboard', requireAuth, async (req, res, next) => {
 });
 
 router.post('/logout', requireAuth, async (req, res, next) => {
-  // Stateless JWT — client drops the token. Server-side we just log the
-  // event. Security remediation M-07 — logout is security-relevant; let a
+  // Security remediation H-05 — logout previously did nothing but log the
+  // event; the JWT itself stayed valid until its 8h expiry regardless
+  // (fully stateless). Now records the token's jti as revoked so it's
+  // rejected on its very next use, even though it hasn't expired.
+  // Security remediation M-07 — logout is security-relevant; let a
   // failed audit write fail the request via next(err) rather than
   // silently vanishing (this handler previously had no next() at all, so
   // a thrown error here would have gone unhandled instead of erroring
   // cleanly — fixed as part of removing the swallow, not just the swallow
   // itself).
   try {
+    if (req.jti && req.tokenExp) {
+      await db.query(
+        `INSERT INTO revoked_tokens (jti, expires_at) VALUES (:jti, :exp)
+           ON DUPLICATE KEY UPDATE expires_at = :exp`,
+        { jti: req.jti, exp: new Date(req.tokenExp * 1000).toISOString().slice(0, 19).replace('T', ' ') }
+      );
+    }
     await db.query(
       `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
          VALUES (:uid, 'user', :uid, 'logout', 'User signed out')`,
@@ -232,11 +242,18 @@ router.post('/reset-password', resetLimiter, async (req, res, next) => {
     }
 
     const newHash = await bcrypt.hash(password, 12);
+    // Security remediation H-05 — bumping token_epoch invalidates every
+    // session issued before this reset (a stolen/still-live token can no
+    // longer authenticate), the actual mitigation a "reset your password"
+    // flow implies but previously didn't deliver — the old password_hash
+    // simply stopped matching new logins while every existing token kept
+    // working until it expired on its own.
     await db.query(
       `UPDATE users
           SET password_hash = :hash,
               password_reset_token = NULL,
-              password_reset_expires_at = NULL
+              password_reset_expires_at = NULL,
+              token_epoch = token_epoch + 1
         WHERE id = :id`,
       { hash: newHash, id: user.id }
     );

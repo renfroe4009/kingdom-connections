@@ -121,4 +121,22 @@ Safe to re-run (checks the current enum before altering). **This one is more tim
 
 ---
 
-*Last updated: end of Phase 2 (complete except H-05), this session. C-02's full fix (Phase 1) and H-05 (Phase 2) still pending.*
+## 10. Run the session-revocation migration against production (Phase 2, H-05)
+
+Adds `users.token_epoch`, `users.password_reset_token`/`password_reset_expires_at` (see below — these were missing entirely, not new), and the `revoked_tokens` table:
+
+```bash
+cd server && node scripts/ensure-session-revocation.js --host <prod-db-host> --database <prod-db-name> --user <prod-db-user> --password <prod-db-password>
+```
+
+Safe to re-run. Not `required:true`-gated like #9 above, so nothing fails outright before this runs — but until it does, `POST /auth/logout`, password resets, and impersonation all throw (they reference columns/tables that won't exist yet), so treat this as blocking for those three flows specifically.
+
+**Also fixes a pre-existing, unrelated bug while it's here**: `users.password_reset_token` and `password_reset_expires_at` were referenced in `auth.js`'s forgot-password/reset-password routes but were never actually in `db/schema.sql` or any prior migration — every password-reset request has been failing with a real SQL error, in production too, most likely since this feature was first written. If any users have reported "forgot password doesn't work," this is almost certainly why. Fixed as part of this migration since H-05 needed to touch this exact path anyway.
+
+## 11. Decide whether to shorten the JWT access-token lifetime further (Phase 2, H-05)
+
+The original audit recommended 15–30 minutes, written when there was no revocation mechanism at all — a short lifetime was the *only* way to limit a stolen token's usefulness. That's no longer true: logout now revokes a token immediately, and a password reset (self-service or admin-initiated) invalidates every other live session for that account in real time. I left `JWT_EXPIRES_IN` at its existing 8h default rather than shortening it, since there's no refresh-token mechanism in this app to absorb the usability cost of frequent re-logins for staff using the CRM all day, and the specific threat the audit was targeting (a stolen token staying valid for hours with no way to kill it) is now closed by revocation instead. If you want a shorter default anyway (defense in depth against a token that's stolen but never detected/reported), it's a one-line env var change (`JWT_EXPIRES_IN=30m` in Railway, standard `ms`-style format) — no code change needed. Flagging as your call, not mine, since it's a product/usability tradeoff, not a pure security question at this point.
+
+---
+
+*Last updated: end of Phase 2 (complete), this session. C-02's full fix (Phase 1) is the only remaining piece of unfinished remediation work from the original plan.*

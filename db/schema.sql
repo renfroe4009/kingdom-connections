@@ -1650,6 +1650,17 @@ CREATE TABLE `recurring_invoices` (
   CONSTRAINT `fk_recurring_invoices_vault` FOREIGN KEY (`vault_profile_id`) REFERENCES `vault_profiles` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `revoked_tokens`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `revoked_tokens` (
+  `jti` varchar(36) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `revoked_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`jti`),
+  KEY `idx_revoked_tokens_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `role_permissions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -2011,6 +2022,9 @@ CREATE TABLE `users` (
   `email_verify_token` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `email_verify_expires_at` datetime DEFAULT NULL,
   `email_verified_at` datetime DEFAULT NULL,
+  `token_epoch` int unsigned NOT NULL DEFAULT '0',
+  `password_reset_token` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `password_reset_expires_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_users_email` (`email`),
   KEY `idx_users_contact` (`contact_id`),

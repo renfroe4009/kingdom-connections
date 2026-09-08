@@ -107,11 +107,12 @@ router.post('/:token/accept', async (req, res, next) => {
     );
 
     const [userRows] = await db.query(
-      `SELECT id, email, first_name, last_name FROM users WHERE id = :id`, { id: userId }
+      `SELECT id, email, first_name, last_name, token_epoch FROM users WHERE id = :id`, { id: userId }
     );
     const user = userRows[0];
-    const jwt = signToken(user);
-    res.json({ token: jwt, user });
+    const jwt = signToken(user, { epoch: user.token_epoch });
+    const { token_epoch, ...safeUser } = user;
+    res.json({ token: jwt, user: safeUser });
   } catch (err) {
     if (err?.name === 'ZodError') return res.status(400).json({ error: err.errors?.[0]?.message || 'Invalid input' });
     next(err);

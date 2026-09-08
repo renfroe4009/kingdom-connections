@@ -2,6 +2,7 @@
 // JWT auth + RBAC middleware
 // =============================================================================
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { db } = require('../db');
 const { logActivity } = require('../services/activity');
 
@@ -16,10 +17,17 @@ if (!JWT_SECRET || JWT_SECRET.length < 16) {
   );
 }
 
+// Security remediation H-05 — every token gets a unique `jti` so a single
+// session can be revoked (see revoked_tokens, checked in
+// loadUserFromRequest) without invalidating every other token issued to
+// the same user. Callers should pass `epoch: <the target user's current
+// token_epoch>` in `extra` so a stale token (issued before a password
+// reset bumped the epoch) is rejected even if it hasn't been individually
+// revoked and hasn't expired yet.
 function signToken(user, extra = {}) {
   const { expiresIn, ...extraClaims } = extra;
   return jwt.sign(
-    { sub: user.id, email: user.email, ...extraClaims },
+    { sub: user.id, email: user.email, jti: crypto.randomUUID(), ...extraClaims },
     JWT_SECRET,
     { expiresIn: expiresIn || process.env.JWT_EXPIRES_IN || '8h' }
   );
@@ -48,16 +56,36 @@ async function loadUserFromRequest(req) {
     throw err;
   }
 
+  // Security remediation H-05 — explicit per-token revocation (logout).
+  // Tokens signed before this fix shipped have no `jti` and can't match a
+  // revoked_tokens row, so they're unaffected until they naturally expire.
+  if (decoded.jti) {
+    const [[revoked]] = await db.query(
+      'SELECT 1 FROM revoked_tokens WHERE jti = :jti', { jti: decoded.jti }
+    );
+    if (revoked) return { user: null, reason: 'invalid_token' };
+  }
+
   // Determine which user ID to load: impersonated agent or actual caller
   const loadId = decoded.impersonating_as || decoded.sub;
 
   const [rows] = await db.query(
-    `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.contact_id, u.default_dashboard
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.contact_id, u.default_dashboard, u.token_epoch
        FROM users u WHERE u.id = :id`,
     { id: loadId }
   );
   const user = rows[0];
   if (!user || !user.is_active) return { user: null, reason: 'invalid_user' };
+
+  // Security remediation H-05 — a token issued before a password reset
+  // bumped this user's token_epoch is stale even though it's neither
+  // expired nor individually revoked. Tokens signed before this fix
+  // shipped carry no `epoch` claim at all; treat that as epoch 0 (the
+  // column's default for every existing user) rather than rejecting every
+  // live session the moment this deploys.
+  const tokenEpoch = decoded.epoch ?? 0;
+  if (tokenEpoch !== user.token_epoch) return { user: null, reason: 'invalid_token' };
+  delete user.token_epoch;
 
   // When impersonating, expose the real caller's ID for audit trails
   if (decoded.impersonating_as) {
@@ -83,7 +111,7 @@ async function loadUserFromRequest(req) {
   );
   user.roles = roleRows.map((r) => r.name);
 
-  return { user, reason: null };
+  return { user, reason: null, jti: decoded.jti || null, exp: decoded.exp || null };
 }
 
 const REASON_MESSAGES = {
@@ -94,9 +122,11 @@ const REASON_MESSAGES = {
 
 async function requireAuth(req, res, next) {
   try {
-    const { user, reason } = await loadUserFromRequest(req);
+    const { user, reason, jti, exp } = await loadUserFromRequest(req);
     if (!user) return res.status(401).json({ error: REASON_MESSAGES[reason] });
     req.user = user;
+    req.jti = jti;
+    req.tokenExp = exp;
     next();
   } catch (err) {
     next(err);
@@ -111,8 +141,12 @@ async function requireAuth(req, res, next) {
 // itself. The route is responsible for deciding what "no session" means.
 async function tryAuth(req, _res, next) {
   try {
-    const { user } = await loadUserFromRequest(req);
-    if (user) req.user = user;
+    const { user, jti, exp } = await loadUserFromRequest(req);
+    if (user) {
+      req.user = user;
+      req.jti = jti;
+      req.tokenExp = exp;
+    }
     next();
   } catch (err) {
     next(err);
