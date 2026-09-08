@@ -43,6 +43,13 @@ function normalize(sql) { return sql.replace(/\s+/g, ' ').trim(); }
 async function mockQuery(sql, params = {}) {
   const s = normalize(sql);
 
+  // moduleSettings.get('invoices') — nextInvoiceNumber's prefix lookup. No
+  // stored row in this mock, so callers always get moduleSettings.js's
+  // built-in DEFAULTS (invoice_prefix: 'INV').
+  if (/^SELECT value_json FROM settings WHERE `key` = :k$/i.test(s)) {
+    return [[]];
+  }
+
   // nextInvoiceNumber — SELECT invoice_number ... LIKE :p ORDER BY id DESC LIMIT 1
   if (/^SELECT invoice_number FROM invoices\s+WHERE invoice_number LIKE :p\s+ORDER BY id DESC LIMIT 1$/i.test(s)) {
     const prefix = String(params.p).replace('%', '');
@@ -152,6 +159,12 @@ async function mockQuery(sql, params = {}) {
       }
     }
     return [{ affectedRows: row ? 1 : 0 }];
+  }
+
+  // automations.js's triggerWorkflow() — fire-and-forget after create/payment;
+  // no workflows configured in this mock, so it's always a no-op match.
+  if (/^SELECT \* FROM automation_workflows WHERE status = 'active' AND trigger_type = :tt$/i.test(s)) {
+    return [[]];
   }
 
   // DELETE FROM invoice_line_items WHERE invoice_id = :id
