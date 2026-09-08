@@ -6,8 +6,15 @@
 // exact shell commands): a custom, non-admin role ("sectest_user_admin")
 // holding ONLY the users.manage permission — matching the audit's actual
 // threat model exactly ("Requires any account with users.manage", which
-// need not be the admin role) — assigned to a manager test user, plus a
-// 'sales'-role report of that manager as the escalation target.
+// need not be the admin role) — assigned to a manager test user (id 7),
+// plus a 'sales'-role report of that manager (id 8, manager_id=7) as the
+// escalation target. User 7 ALSO holds the real 'manager' role (added
+// alongside sectest_user_admin after H-10 shipped) purely so
+// resolveOwnerScope's dedicated manager branch gives it real scope over
+// its report — H-10 correctly removed the old fail-open fallback that
+// used to give sectest_user_admin (an uncategorised custom role) blanket
+// unrestricted scope, which this test's "no regression" case had been
+// incidentally relying on.
 //
 // Run:  node server/tests/security/C-03.privilege-escalation.test.js
 // =============================================================================

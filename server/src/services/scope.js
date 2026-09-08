@@ -61,8 +61,16 @@ async function resolveOwnerScope(user) {
     return [user.id];
   }
 
-  // Fallback: no restriction (e.g. future roles not yet categorised)
-  return null;
+  // Fallback (security remediation H-10): least-privilege, not unrestricted.
+  // POST /api/roles lets operators create arbitrary new roles, and none of
+  // them are auto-categorised here — a role like "volunteer_coordinator"
+  // used to fall through to `return null` (unrestricted access to every
+  // contact/deal/task/invoice/subscription in the system), which an
+  // operator creating a deliberately narrow role would never expect. Own
+  // records only, until this function is updated to know the new role.
+  // eslint-disable-next-line no-console
+  console.warn(`[scope] resolveOwnerScope: uncategorised role(s) [${roles.join(', ')}] for user ${user.id} — defaulting to own-records-only scope. Add this role to services/scope.js if it should see more.`);
+  return [user.id];
 }
 
 /**

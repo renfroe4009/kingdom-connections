@@ -24,6 +24,7 @@ const { sendMail } = require('../services/mailer');
 const { renderBySlug } = require('../services/templates');
 const { tagInvoicePaymentAsDonation } = require('../services/constituents');
 const moduleSettings = require('../services/moduleSettings');
+const { encrypt: encryptSecret } = require('../services/secretsCrypto');
 
 // ---------- helpers ----------
 
@@ -1810,7 +1811,12 @@ router.put('/settings', requirePermission('settings.manage'), async (req, res, n
     const existing = existingRows[0];
 
     // Preserve secret when the client sent back the mask
-    const secret = (key) => (d[key] === '********' ? existing?.[key] : d[key]);
+    // Security remediation H-13 — a genuinely new value from the client gets
+    // encrypted before it's ever placed in the payload; the masked-placeholder
+    // branch just reuses the stored value unchanged (already encrypted from a
+    // prior save, or untouched legacy plaintext pending the one-time
+    // migration script — never re-encrypted here either way).
+    const secret = (key) => (d[key] === '********' ? existing?.[key] : encryptSecret(d[key]));
 
     const payload = {
       gateway: d.gateway,

@@ -6,6 +6,11 @@ const multer    = require('multer');
 const { db }    = require('../db');
 const storage   = require('../services/storage');
 const { requireAuth, requirePermission } = require('../middleware/auth');
+const { validateUploadedFile } = require('../services/uploadValidation');
+
+// image/svg+xml deliberately excluded (security remediation H-11) — see
+// services/uploadValidation.js for why.
+const ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
 // ── Data type registry ──────────────────────────────────────────────────────
 // Add new list-page data types here. Fields must match the DB table columns.
@@ -42,7 +47,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter(_req, file, cb) {
-    if (/^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(file.mimetype)) cb(null, true);
+    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) cb(null, true);
     else cb(Object.assign(new Error('Images only (PNG, JPG, GIF, WebP)'), { status: 400 }));
   },
 });
@@ -115,6 +120,11 @@ router.post('/:type/:id/photo', upload.single('file'), async (req, res, next) =>
     const cfg = getType(req, res); if (!cfg) return;
     if (!req.file) return res.status(400).json({ error: 'No file' });
 
+    // Real content check (security remediation H-11) — fileFilter above
+    // only saw the client-declared Content-Type.
+    const validation = await validateUploadedFile(req.file, ALLOWED_MIME_TYPES);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+
     const [[existing]] = await db.query(`SELECT * FROM ${cfg.table} WHERE id = ?`, [req.params.id]);
     if (!existing) return res.status(404).json({ error: 'Record not found' });
 
@@ -161,6 +171,7 @@ router.get('/:type/:id/photo/file', async (req, res, next) => {
     const ext = row.image_storage_key.split('.').pop().toLowerCase();
     const mime = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp' }[ext] || 'image/jpeg';
     res.setHeader('Content-Type', mime);
+    res.setHeader('X-Content-Type-Options', 'nosniff'); // security remediation H-11
     res.setHeader('Cache-Control', 'public, max-age=3600');
     got.stream.on('error', next);
     got.stream.pipe(res);

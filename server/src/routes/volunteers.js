@@ -17,6 +17,7 @@ const QRCode = require('qrcode');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { ensureConstituentTag } = require('../services/constituents');
+const { verifyEventPin, checkinPinLimiter } = require('../services/checkinPin');
 
 const router = express.Router();
 
@@ -106,15 +107,14 @@ router.get('/public/badge/:qrToken', async (req, res, next) => {
 // POST /public/checkin/:eventId/scan — PIN-link check-in/out for volunteers
 // scanning their own (or each other's) badge with no CRM login. Reuses the
 // same events.checkin_pin the ticket-scanning gate link already relies on.
-router.post('/public/checkin/:eventId/scan', async (req, res, next) => {
+router.post('/public/checkin/:eventId/scan', checkinPinLimiter, async (req, res, next) => {
   try {
     const eventId = Number(req.params.eventId);
     const { pin, qr_token } = req.body || {};
     if (!pin || !qr_token) return res.status(400).json({ error: 'pin and qr_token are required' });
 
-    const [[event]] = await db.query('SELECT checkin_pin FROM events WHERE id = :id', { id: eventId });
-    if (!event || !event.checkin_pin || event.checkin_pin !== pin) {
-      return res.status(403).json({ error: 'Invalid check-in PIN' });
+    if (!(await verifyEventPin(eventId, pin))) {
+      return res.status(403).json({ error: 'Invalid or expired check-in PIN' });
     }
 
     const result = await performVolunteerScan(qr_token, { eventId });

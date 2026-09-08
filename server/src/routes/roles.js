@@ -61,9 +61,29 @@ const saveSchema = z.object({
   permission_ids: z.array(z.number().int()).optional(),
 });
 
+// Security remediation H-09 — a non-admin roles.manage holder must not be
+// able to grant a role permissions they don't already have themselves
+// (mirrors C-03's assertGrantableRoles, applied to permission_ids here
+// instead of role_ids). Admins bypass, same as everywhere else.
+async function assertGrantablePermissions(user, permissionIds) {
+  if (!permissionIds?.length || user.roles?.includes('admin')) return;
+  const [rows] = await db.query(
+    'SELECT `key` FROM permissions WHERE id IN (:ids)', { ids: permissionIds }
+  );
+  const have = new Set(user.permissions || []);
+  const missing = rows.map((r) => r.key).filter((k) => !have.has(k));
+  if (missing.length) {
+    throw Object.assign(
+      new Error(`Cannot grant permissions you do not hold: ${missing.join(', ')}`),
+      { status: 403 }
+    );
+  }
+}
+
 router.post('/', requirePermission('roles.manage'), async (req, res, next) => {
   try {
     const data = saveSchema.parse(req.body);
+    await assertGrantablePermissions(req.user, data.permission_ids);
     const [ins] = await db.query(
       'INSERT INTO roles (name, description) VALUES (:name, :description)',
       { name: data.name, description: data.description || null }
@@ -73,13 +93,43 @@ router.post('/', requirePermission('roles.manage'), async (req, res, next) => {
       await db.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ?', [values]);
     }
     res.status(201).json({ id: ins.insertId });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
 router.put('/:id', requirePermission('roles.manage'), async (req, res, next) => {
   try {
     const data = saveSchema.parse(req.body);
     const id = Number(req.params.id);
+
+    const [[existing]] = await db.query('SELECT name, is_system FROM roles WHERE id = :id', { id });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    // Security remediation H-09 — four escalation paths closed here:
+    // 1. A system role's name is load-bearing (the middleware/auth.js
+    //    admin bypass matches on role NAME) — renaming it away could lock
+    //    out every administrator or orphan every account holding it.
+    if (existing.is_system && data.name !== existing.name) {
+      return res.status(400).json({ error: 'Cannot rename a system role' });
+    }
+    // 2. Conversely, no role — system or custom — may be renamed TO
+    //    "admin" except the real admin role itself. Renaming an unrelated
+    //    custom role to "admin" grants the requirePermission() bypass to
+    //    everyone holding it, without ever touching the real admin role.
+    if (data.name.toLowerCase() === 'admin' && existing.name !== 'admin') {
+      return res.status(400).json({ error: 'Only the built-in admin role may be named "admin"' });
+    }
+    // 3. A caller may not modify a role they themselves hold — closes the
+    //    self-service permission-grant path (a roles.manage holder editing
+    //    their own role's permission_ids to grant themselves more access).
+    if (!req.user.roles?.includes('admin') && req.user.roles?.includes(existing.name)) {
+      return res.status(403).json({ error: 'You cannot modify a role you hold' });
+    }
+    // 4. Cannot grant permissions the caller doesn't already have.
+    await assertGrantablePermissions(req.user, data.permission_ids);
+
     await db.query('UPDATE roles SET name = :name, description = :description WHERE id = :id',
       { id, name: data.name, description: data.description || null });
     if (data.permission_ids) {
@@ -90,7 +140,10 @@ router.put('/:id', requirePermission('roles.manage'), async (req, res, next) => 
       }
     }
     res.json({ ok: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
 router.delete('/:id', requirePermission('roles.manage'), async (req, res, next) => {

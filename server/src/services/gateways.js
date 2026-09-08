@@ -25,8 +25,30 @@
 // =============================================================================
 
 const { db } = require('../db');
+const { decrypt, looksEncrypted } = require('./secretsCrypto');
 
 // --------- settings access ---------
+
+// Columns encrypted at rest (security remediation H-13) — public_client_key
+// is deliberately excluded, it's a publishable-style key meant to be
+// client-visible, not a secret.
+const ENCRYPTED_COLUMNS = ['transaction_key', 'signature_key', 'api_key', 'app_key', 'webhook_secret'];
+
+// Decrypts a raw payment_gateway_settings row in place for actual use
+// (calling out to the gateway's API), as opposed to the masked display
+// copy GET /payments/settings returns. Tolerates rows the one-time
+// migration script (scripts/encrypt-gateway-secrets.js) hasn't reached yet
+// — a value not in "iv:authTag:ciphertext" shape is treated as legacy
+// plaintext and passed through unchanged, so payment processing never
+// breaks because encryption was deployed before the migration ran.
+function decryptGatewayRow(row) {
+  if (!row) return row;
+  const out = { ...row };
+  for (const col of ENCRYPTED_COLUMNS) {
+    if (looksEncrypted(out[col])) out[col] = decrypt(out[col]);
+  }
+  return out;
+}
 
 async function getGateway(gateway, mode) {
   const [rows] = await db.query(
@@ -37,7 +59,7 @@ async function getGateway(gateway, mode) {
       ORDER BY is_default DESC, id DESC LIMIT 1`,
     { gateway, mode: mode || null }
   );
-  return rows[0] || null;
+  return decryptGatewayRow(rows[0]) || null;
 }
 
 async function getDefaultGateway() {
@@ -46,10 +68,10 @@ async function getDefaultGateway() {
       WHERE is_active = 1 AND is_default = 1
       ORDER BY id DESC LIMIT 1`
   );
-  if (rows[0]) return rows[0];
+  if (rows[0]) return decryptGatewayRow(rows[0]);
   const [any] = await db.query(
     `SELECT * FROM payment_gateway_settings WHERE is_active = 1 ORDER BY id LIMIT 1`);
-  return any[0] || null;
+  return decryptGatewayRow(any[0]) || null;
 }
 
 // --------- B2B: Level 2 / Level 3 builders ---------
@@ -1485,6 +1507,8 @@ function mapAuthnetVaultChargeResponse(json) {
 module.exports = {
   getGateway,
   getDefaultGateway,
+  decryptGatewayRow,
+  ENCRYPTED_COLUMNS,
   createHostedCheckout,
   authnetFetchTransaction,
   authnetSearchByInvoice,

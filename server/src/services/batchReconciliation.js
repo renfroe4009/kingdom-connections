@@ -23,7 +23,7 @@
 // =============================================================================
 
 const { db } = require('../db');
-const { authnetFetchTransaction } = require('./gateways');
+const { authnetFetchTransaction, decryptGatewayRow } = require('./gateways');
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -43,7 +43,9 @@ function fmtValorDateOnly(d) {
 async function loadActiveGateways() {
   const [rows] = await db.query(
     `SELECT * FROM payment_gateway_settings WHERE is_active = 1`);
-  return rows;
+  // Security remediation H-13 — this bypasses getGateway()/getDefaultGateway()
+  // (which decrypt internally), so decrypt explicitly here too.
+  return rows.map(decryptGatewayRow);
 }
 
 async function startRun({ gateway, mode, trigger_kind = 'cron', triggered_by = null, window_start, window_end }) {

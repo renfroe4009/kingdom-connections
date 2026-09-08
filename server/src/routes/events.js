@@ -19,6 +19,7 @@ const { ensureConstituentTag } = require('../services/constituents');
 const moduleSettings = require('../services/moduleSettings');
 const { createTicketsForRegistration, performScan } = require('../services/eventTickets');
 const { sendMail } = require('../services/mailer');
+const { generatePin, verifyEventPin, checkinPinLimiter } = require('../services/checkinPin');
 
 // Free tickets never touch the invoice/payment pipeline, so they never hit
 // payments.js's payment_receipt email either — without this, a free
@@ -271,15 +272,14 @@ router.get('/public/ticket/:qrToken/qr.png', async (req, res, next) => {
 
 // POST /public/checkin/:eventId/scan — PIN-link check-in for day-of
 // volunteers with no CRM account. Requires the event's current checkin_pin.
-router.post('/public/checkin/:eventId/scan', async (req, res, next) => {
+router.post('/public/checkin/:eventId/scan', checkinPinLimiter, async (req, res, next) => {
   try {
     const eventId = Number(req.params.eventId);
     const { pin, qr_token } = req.body || {};
     if (!pin || !qr_token) return res.status(400).json({ error: 'pin and qr_token are required' });
 
-    const [[event]] = await db.query('SELECT checkin_pin FROM events WHERE id = :id', { id: eventId });
-    if (!event || !event.checkin_pin || event.checkin_pin !== pin) {
-      return res.status(403).json({ error: 'Invalid check-in PIN' });
+    if (!(await verifyEventPin(eventId, pin))) {
+      return res.status(403).json({ error: 'Invalid or expired check-in PIN' });
     }
 
     const result = await performScan(qr_token, { checkedInBy: null, eventId });
@@ -501,7 +501,7 @@ router.post('/admin/checkin/scan', requireAuth, requirePermission('events.checki
 // PIN so staff can hand a fresh code to day-of volunteers.
 router.post('/admin/:id/checkin/regenerate-pin', requireAuth, requirePermission('events.write'), async (req, res, next) => {
   try {
-    const pin = String(crypto.randomInt(100000, 999999));
+    const pin = generatePin();
     await db.query('UPDATE events SET checkin_pin = :pin WHERE id = :id', { pin, id: req.params.id });
     res.json({ checkin_pin: pin });
   } catch (err) { next(err); }

@@ -7,6 +7,7 @@ try { sharp = require('sharp'); } catch { sharp = null; }
 const { db }      = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const storage     = require('../services/storage');
+const { validateUploadedFile } = require('../services/uploadValidation');
 
 const router = express.Router();
 
@@ -14,16 +15,25 @@ const router = express.Router();
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-// Accept files into memory so we can pass buffers to the storage service
+// image/svg+xml deliberately removed (security remediation H-11) — SVG is
+// active content (can embed <script>) and was served with no explicit
+// Content-Type, letting a browser sniff and execute it. See
+// services/uploadValidation.js for what it would take to bring SVG back
+// safely.
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/pdf', 'video/mp4', 'video/webm',
+];
+
+// Accept files into memory so we can pass buffers to the storage service.
+// fileFilter is only a cheap first pass on the client-DECLARED type — the
+// real check is validateUploadedFile()'s magic-byte sniff in the route
+// handler below, once multer has actually buffered the file.
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const ALLOWED = [
-      'image/jpeg','image/png','image/gif','image/webp','image/svg+xml',
-      'application/pdf','video/mp4','video/webm',
-    ];
-    if (ALLOWED.includes(file.mimetype)) return cb(null, true);
+    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) return cb(null, true);
     cb(new Error(`File type not allowed: ${file.mimetype}`));
   },
 });
@@ -31,6 +41,13 @@ const upload = multer({
 const IMAGE_TYPES = new Set(['image/jpeg','image/png','image/webp','image/gif']);
 
 async function processAndStore(file, req) {
+  // Real content check (security remediation H-11) — fileFilter above only
+  // saw the client-declared Content-Type; this verifies the actual bytes.
+  const validation = await validateUploadedFile(file, ALLOWED_MIME_TYPES);
+  if (!validation.ok) {
+    throw Object.assign(new Error(validation.error), { status: 400 });
+  }
+
   let buffer    = file.buffer;
   let mime_type = file.mimetype;
   let width     = null;
@@ -98,13 +115,19 @@ router.get('/file/*', async (req, res) => {
     // Only ever serve keys this app itself registered in the media library —
     // removes attacker control over the path entirely, regardless of shape.
     const [[registered]] = await db.query(
-      'SELECT id FROM media_files WHERE filename = :key LIMIT 1',
+      'SELECT id, mime_type FROM media_files WHERE filename = :key LIMIT 1',
       { key }
     );
     if (!registered) return res.status(404).end();
 
     const got = await storage.getReadable({ driver: storage.driver, key });
     if (got.type === 'redirect') return res.redirect(got.url);
+    // Explicit Content-Type from the DB-registered value (never sniffed,
+    // never client-supplied) + nosniff — security remediation H-11. Every
+    // type reaching this point already passed magic-byte validation at
+    // upload time, so inline rendering here is safe.
+    res.setHeader('Content-Type', registered.mime_type || 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     got.stream.on('error', () => res.status(404).end());
     got.stream.pipe(res);
@@ -134,7 +157,7 @@ router.post('/upload', requireAuth, requirePermission('settings.manage'), upload
 
     res.status(201).json(inserted);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e?.status || 500).json({ error: e.message });
   }
 });
 

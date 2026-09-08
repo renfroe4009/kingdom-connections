@@ -83,4 +83,30 @@ No urgency — Report-Only ships real value today (visibility into what would br
 
 ---
 
-*Last updated: end of Phase 1, this session (C-02's full fix still pending).*
+## 7. Run the gateway-secrets encryption migration against production (Phase 2, H-13)
+
+`payment_gateway_settings`' credential columns are now encrypted at rest (AES-256-GCM). Before or immediately after deploying this code to production:
+
+```bash
+# 1. Generate a real encryption key (same method as JWT_SECRET) and set it
+#    as SECRETS_ENCRYPTION_KEY in the server's Railway environment variables:
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+
+# 2. Run the one-time migration against production (safe to re-run — skips
+#    anything already encrypted):
+cd server && node scripts/encrypt-gateway-secrets.js --host <prod-db-host> --database <prod-db-name> --user <prod-db-user> --password <prod-db-password>
+#    (or set DB_HOST/DB_NAME/DB_USER/DB_PASSWORD in that shell's environment
+#    instead of passing them as flags)
+```
+
+The code tolerates the migration not having run yet (falls back to plaintext, doesn't crash), but gateway credentials stay unencrypted until it does. **Back up `SECRETS_ENCRYPTION_KEY` the same way you would `JWT_SECRET`/`DB_PASSWORD`** — losing it makes the encrypted credentials unrecoverable, and every gateway payment call will start failing.
+
+---
+
+## 8. AV scanning for user-uploaded content, still open (Phase 2, H-11)
+
+Same open item as #3 above (was flagged in Phase 0 before H-11 was fixed) — magic-byte validation and SVG removal now ship, but antivirus scanning of uploaded files and serving them from a separate origin (both from the original audit) were not built this pass. No urgency; revisit if/when upload volume from untrusted users grows.
+
+---
+
+*Last updated: end of Phase 2 (in progress), this session. C-02's full fix (Phase 1) and H-07/H-05/M-07 (Phase 2) still pending.*
