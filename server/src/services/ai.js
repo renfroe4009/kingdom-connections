@@ -5,6 +5,8 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { db }    = require('../db');
 const { sanitizeHtml } = require('./sanitizeHtml');
+const { resolveOwnerScope, ownerClause, contactOwnerClause, taskClause } = require('./scope');
+const { logActivity } = require('./activity');
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS    = 2048;
@@ -346,6 +348,76 @@ const TOOL_DEFINITIONS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Tool authorization (security remediation C-02, full fix)
+// -----------------------------------------------------------------------------
+// The interim Phase 0 gate (requireStaffAccess in routes/ai.js) only checked
+// that the CALLER isn't a portal account and holds some real CRM permission
+// before reaching the assistant at all — every one of the tools below then
+// ran with zero permission or row-scope check of its own, so any staff
+// account (even one holding only e.g. tasks.read) could use the assistant
+// to read invoice/payment/subscription financials, or list/complete ANY
+// user's tasks and ANY sales rep's contacts, regardless of what the same
+// account could see through the regular UI.
+//
+// TOOL_POLICY is deny-by-default: a tool name with no entry here is
+// unreachable (see hasPermission's `!policy` branch below), same as
+// requirePermission()'s handling of an unlisted route. `permissions`
+// mirrors requirePermission()'s variadic signature — the caller needs ALL
+// of them (or the 'admin' role, which bypasses everything, same as
+// requirePermission()). Tools whose underlying query is genuinely org-wide
+// by nature (aggregate BI-style tools with no per-user equivalent anywhere
+// else in the app, or staff-shared CMS content) have no scope restriction
+// beyond the permission itself — that mirrors what the equivalent
+// human-facing route does today, not a new restriction invented here.
+const TOOL_POLICY = {
+  get_invoice_summary:    { permissions: ['invoices.read'] },
+  get_revenue_summary:    { permissions: ['payments.read'] },
+  get_contact_stats:      { permissions: ['contacts.read'] },
+  get_deal_pipeline:      { permissions: ['deals.read'] },
+  get_subscription_stats: { permissions: ['subscriptions.read'] },
+  get_task_summary:       { permissions: ['tasks.read'] },
+  get_overdue_invoices:   { permissions: ['invoices.read'] },
+  get_recent_contacts:    { permissions: ['contacts.read'] },
+  get_top_clients:        { permissions: ['contacts.read', 'payments.read'] },
+  get_payment_history:    { permissions: ['payments.read'] },
+
+  get_social_accounts:    { permissions: ['campaigns.read'] },
+  save_blog_draft:        { permissions: ['settings.manage'] },
+  save_social_draft:      { permissions: ['campaigns.write'] },
+  save_email_template:    { permissions: ['comms.templates.manage'] },
+
+  get_open_tasks:         { permissions: ['tasks.read'] },
+  create_task:            { permissions: ['tasks.write'] },
+  complete_task:          { permissions: ['tasks.write'] },
+  search_contacts:        { permissions: ['contacts.read'] },
+  create_contact:         { permissions: ['contacts.write'] },
+  create_deal:            { permissions: ['deals.write'] },
+  get_blog_posts:         { permissions: ['settings.manage'] },
+  update_blog_post:       { permissions: ['settings.manage'] },
+};
+
+// Mirrors requirePermission()'s exact logic (middleware/auth.js) — the
+// 'admin' role bypasses everything, otherwise every listed permission must
+// be held. Kept in lockstep deliberately: this is a second authorization
+// surface parallel to the route layer, and a divergence here would be
+// exactly the kind of gap C-02 originally found.
+function hasPermission(user, required) {
+  if (!user) return false;
+  if (user.roles?.includes('admin')) return true;
+  const have = new Set(user.permissions || []);
+  return (required || []).every((p) => have.has(p));
+}
+
+// Filters the tool list actually advertised to the model — a caller never
+// even sees a tool it isn't authorized to use, rather than discovering
+// that via a denied call. Deny-by-default: TOOL_DEFINITIONS entries with
+// no TOOL_POLICY row (shouldn't happen — every tool is listed above) are
+// excluded rather than defaulting open.
+function getToolsForUser(user) {
+  return TOOL_DEFINITIONS.filter((t) => hasPermission(user, TOOL_POLICY[t.name]?.permissions));
+}
+
+// ---------------------------------------------------------------------------
 // Content-creation helpers
 // ---------------------------------------------------------------------------
 
@@ -411,17 +483,21 @@ async function defaultPipelineStage() {
 // Tool executor
 // ---------------------------------------------------------------------------
 
-async function executeTool(name, input, userId) {
+async function executeTool(name, input, user) {
+  const userId = user?.id ?? null;
   const limit = Math.min(Number(input?.limit) || 10, 25);
 
   switch (name) {
     case 'get_invoice_summary': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = contactOwnerClause(scopeIds, 'contact_id');
       const [rows] = await db.query(`
         SELECT status,
                COUNT(*)                     AS count,
                ROUND(SUM(total), 2)         AS total_amount,
                ROUND(SUM(balance_due), 2)   AS total_outstanding
           FROM invoices
+         ${scopeClause ? `WHERE ${scopeClause}` : ''}
          GROUP BY status
          ORDER BY FIELD(status, 'overdue', 'sent', 'partial', 'draft', 'paid', 'void')
       `);
@@ -431,34 +507,43 @@ async function executeTool(name, input, userId) {
     case 'get_revenue_summary': {
       const period    = input?.period || 'this_month';
       const periodSQL = {
-        this_month:    `YEAR(received_at)  = YEAR(CURDATE()) AND MONTH(received_at) = MONTH(CURDATE())`,
-        last_month:    `received_at >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
-                          AND received_at < DATE_FORMAT(CURDATE(), '%Y-%m-01')`,
-        this_quarter:  `YEAR(received_at)  = YEAR(CURDATE()) AND QUARTER(received_at) = QUARTER(CURDATE())`,
-        this_year:     `YEAR(received_at)  = YEAR(CURDATE())`,
+        this_month:    `YEAR(p.received_at)  = YEAR(CURDATE()) AND MONTH(p.received_at) = MONTH(CURDATE())`,
+        last_month:    `p.received_at >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                          AND p.received_at < DATE_FORMAT(CURDATE(), '%Y-%m-01')`,
+        this_quarter:  `YEAR(p.received_at)  = YEAR(CURDATE()) AND QUARTER(p.received_at) = QUARTER(CURDATE())`,
+        this_year:     `YEAR(p.received_at)  = YEAR(CURDATE())`,
         all_time:      `1=1`,
       }[period] || '1=1';
 
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = contactOwnerClause(scopeIds, 'i.contact_id');
+
       const [[revenue]] = await db.query(`
-        SELECT ROUND(SUM(amount - COALESCE(fee_amount, 0)), 2) AS net_revenue,
-               ROUND(SUM(amount), 2)                           AS gross_revenue,
-               COUNT(*)                                        AS payment_count
-          FROM payments
-         WHERE status IN ('captured', 'authorized')
+        SELECT ROUND(SUM(p.amount - COALESCE(p.fee_amount, 0)), 2) AS net_revenue,
+               ROUND(SUM(p.amount), 2)                             AS gross_revenue,
+               COUNT(*)                                            AS payment_count
+          FROM payments p
+          JOIN invoices i ON i.id = p.invoice_id
+         WHERE p.status IN ('captured', 'authorized')
            AND ${periodSQL}
+           ${scopeClause ? `AND ${scopeClause}` : ''}
       `);
       return { period, ...revenue };
     }
 
     case 'get_contact_stats': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = ownerClause(scopeIds, 'owner_id');
       const [[totals]] = await db.query(`
         SELECT COUNT(*) AS total,
                SUM(CASE WHEN created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN 1 ELSE 0 END) AS new_this_month
           FROM contacts
+         ${scopeClause ? `WHERE ${scopeClause}` : ''}
       `);
       const [byStage] = await db.query(`
         SELECT COALESCE(lifecycle_stage, 'none') AS lifecycle_stage, COUNT(*) AS count
           FROM contacts
+         ${scopeClause ? `WHERE ${scopeClause}` : ''}
          GROUP BY lifecycle_stage
          ORDER BY count DESC
       `);
@@ -466,11 +551,14 @@ async function executeTool(name, input, userId) {
     }
 
     case 'get_deal_pipeline': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = ownerClause(scopeIds, 'owner_id');
       const [byStatus] = await db.query(`
         SELECT status,
                COUNT(*)                  AS count,
                ROUND(SUM(amount), 2)     AS total_value
           FROM deals
+         ${scopeClause ? `WHERE ${scopeClause}` : ''}
          GROUP BY status
       `);
       const [[wr]] = await db.query(`
@@ -479,11 +567,14 @@ async function executeTool(name, input, userId) {
                  NULLIF(SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END), 0),
                1) AS win_rate_pct
           FROM deals
+         ${scopeClause ? `WHERE ${scopeClause}` : ''}
       `);
       return { by_status: byStatus, win_rate_pct: wr?.win_rate_pct };
     }
 
     case 'get_subscription_stats': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = contactOwnerClause(scopeIds, 's.contact_id');
       const [[stats]] = await db.query(`
         SELECT COUNT(*) AS active_count,
                ROUND(SUM(
@@ -502,18 +593,24 @@ async function executeTool(name, input, userId) {
                  GROUP BY subscription_id
                ) si ON si.subscription_id = s.id
          WHERE s.status = 'active'
+           ${scopeClause ? `AND ${scopeClause}` : ''}
       `);
       return stats || { active_count: 0, estimated_mrr: 0 };
     }
 
     case 'get_task_summary': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = taskClause(scopeIds);
       const [byStatus] = await db.query(`
-        SELECT status, COUNT(*) AS count FROM tasks GROUP BY status
+        SELECT status, COUNT(*) AS count FROM tasks
+         ${scopeClause ? `WHERE ${scopeClause}` : ''}
+         GROUP BY status
       `);
       const [byPriority] = await db.query(`
         SELECT priority, COUNT(*) AS count
           FROM tasks
          WHERE status NOT IN ('completed','cancelled')
+           ${scopeClause ? `AND ${scopeClause}` : ''}
          GROUP BY priority
          ORDER BY FIELD(priority,'urgent','high','normal','low')
       `);
@@ -521,11 +618,14 @@ async function executeTool(name, input, userId) {
         SELECT COUNT(*) AS overdue_count
           FROM tasks
          WHERE due_date < NOW() AND status NOT IN ('completed','cancelled')
+           ${scopeClause ? `AND ${scopeClause}` : ''}
       `);
       return { by_status: byStatus, by_priority: byPriority, ...overdue };
     }
 
     case 'get_overdue_invoices': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = contactOwnerClause(scopeIds, 'i.contact_id');
       const [rows] = await db.query(`
         SELECT i.invoice_number,
                ROUND(i.total, 2)        AS total,
@@ -537,6 +637,7 @@ async function executeTool(name, input, userId) {
           FROM invoices i
           LEFT JOIN contacts c ON c.id = i.contact_id
          WHERE i.status IN ('overdue','sent','partial') AND i.due_date < CURDATE()
+           ${scopeClause ? `AND ${scopeClause}` : ''}
          ORDER BY i.due_date ASC
          LIMIT :limit
       `, { limit });
@@ -544,12 +645,15 @@ async function executeTool(name, input, userId) {
     }
 
     case 'get_recent_contacts': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = ownerClause(scopeIds, 'c.owner_id');
       const [rows] = await db.query(`
         SELECT c.first_name, c.last_name, c.email, c.phone,
                c.lifecycle_stage, c.created_at,
                o.name AS organization_name
           FROM contacts c
           LEFT JOIN organizations o ON o.id = c.organization_id
+         ${scopeClause ? `WHERE ${scopeClause}` : ''}
          ORDER BY c.created_at DESC
          LIMIT :limit
       `, { limit });
@@ -557,6 +661,8 @@ async function executeTool(name, input, userId) {
     }
 
     case 'get_top_clients': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = ownerClause(scopeIds, 'c.owner_id');
       const [rows] = await db.query(`
         SELECT CONCAT_WS(' ', c.first_name, c.last_name) AS contact_name,
                c.email,
@@ -565,6 +671,7 @@ async function executeTool(name, input, userId) {
           FROM contacts c
           JOIN invoices i ON i.contact_id = c.id
           JOIN payments p ON p.invoice_id = i.id AND p.status IN ('captured','authorized')
+         ${scopeClause ? `WHERE ${scopeClause}` : ''}
          GROUP BY c.id, c.first_name, c.last_name, c.email
          ORDER BY total_paid DESC
          LIMIT :limit
@@ -573,6 +680,8 @@ async function executeTool(name, input, userId) {
     }
 
     case 'get_payment_history': {
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = contactOwnerClause(scopeIds, 'i.contact_id');
       const [rows] = await db.query(`
         SELECT ROUND(p.amount, 2) AS amount,
                p.gateway, p.method,
@@ -583,6 +692,7 @@ async function executeTool(name, input, userId) {
           JOIN invoices i  ON i.id = p.invoice_id
           LEFT JOIN contacts c ON c.id = i.contact_id
          WHERE p.status IN ('captured','authorized')
+           ${scopeClause ? `AND ${scopeClause}` : ''}
          ORDER BY COALESCE(p.received_at, p.created_at) DESC
          LIMIT :limit
       `, { limit });
@@ -637,10 +747,13 @@ async function executeTool(name, input, userId) {
 
     case 'get_open_tasks': {
       const { search } = input;
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = taskClause(scopeIds);
       let sql = `SELECT id, title, status, priority, due_date
                    FROM tasks
                   WHERE status IN ('open','in_progress')`;
       const params = [];
+      if (scopeClause) sql += ` AND ${scopeClause}`;
       if (search) { sql += ' AND title LIKE ?'; params.push(`%${search}%`); }
       sql += ` ORDER BY FIELD(priority,'urgent','high','normal','low'), due_date ASC LIMIT ?`;
       params.push(limit);
@@ -662,16 +775,32 @@ async function executeTool(name, input, userId) {
     case 'complete_task': {
       const { id: taskId, title: titleSearch } = input;
       if (!taskId && !titleSearch) return { error: 'Provide either id or title to identify the task.' };
+      // Security remediation C-02 — this previously looked up/updated ANY
+      // task in the system by id or title with no ownership check at all,
+      // letting e.g. a scoped 'sales' rep use the assistant to complete a
+      // task belonging to someone else, something the regular /api/tasks
+      // UI never allows (tasks.js applies taskClause on every read). Scope
+      // both lookup paths the same way; an out-of-scope task simply isn't
+      // found, matching the existing "no task found" wording rather than
+      // leaking whether it exists.
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = taskClause(scopeIds);
       let resolvedId = taskId;
       let resolvedTitle = null;
       if (!resolvedId) {
         const [[found]] = await db.query(
-          `SELECT id, title FROM tasks WHERE title LIKE ? AND status NOT IN ('completed','cancelled') LIMIT 1`,
+          `SELECT id, title FROM tasks WHERE title LIKE ? AND status NOT IN ('completed','cancelled')
+             ${scopeClause ? `AND ${scopeClause}` : ''} LIMIT 1`,
           [`%${titleSearch}%`],
         );
         if (!found) return { error: `No open task found matching "${titleSearch}"` };
         resolvedId  = found.id;
         resolvedTitle = found.title;
+      } else if (scopeClause) {
+        const [[owned]] = await db.query(
+          `SELECT id FROM tasks WHERE id = ? AND ${scopeClause}`, [resolvedId],
+        );
+        if (!owned) return { error: `No open task found matching #${resolvedId}` };
       }
       await db.query(`UPDATE tasks SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = ?`, [resolvedId]);
       return { ok: true, id: resolvedId, message: `Task "${resolvedTitle || `#${resolvedId}`}" marked as completed.` };
@@ -680,13 +809,16 @@ async function executeTool(name, input, userId) {
     case 'search_contacts': {
       const { query } = input;
       if (!query) return { error: 'query is required' };
+      const scopeIds = await resolveOwnerScope(user);
+      const scopeClause = ownerClause(scopeIds, 'c.owner_id');
       const [rows] = await db.query(
         `SELECT c.id, c.first_name, c.last_name, c.email, c.phone,
                 o.name AS organization
            FROM contacts c
            LEFT JOIN organizations o ON o.id = c.organization_id
-          WHERE c.first_name LIKE :q OR c.last_name LIKE :q OR c.email LIKE :q
-             OR CONCAT(c.first_name, ' ', c.last_name) LIKE :q
+          WHERE (c.first_name LIKE :q OR c.last_name LIKE :q OR c.email LIKE :q
+             OR CONCAT(c.first_name, ' ', c.last_name) LIKE :q)
+             ${scopeClause ? `AND ${scopeClause}` : ''}
           ORDER BY c.first_name, c.last_name
           LIMIT :limit`,
         { q: `%${query}%`, limit },
@@ -758,7 +890,7 @@ async function executeTool(name, input, userId) {
 // streamChat — agentic loop with DB tool support
 // ---------------------------------------------------------------------------
 
-async function streamChat(res, messages, module, appName, userId = null) {
+async function streamChat(res, messages, module, appName, user = null) {
   // Open the SSE stream immediately — before any async DB/API work.
   // This ensures Railway's proxy knows it's a streaming response right away,
   // and any setup errors arrive as proper SSE events (not an abrupt HTTP error
@@ -804,6 +936,12 @@ async function streamChat(res, messages, module, appName, userId = null) {
 
   const system = buildSystemPrompt(articles, appName);
 
+  // Security remediation C-02 — only advertise tools this caller is
+  // actually authorized to use. Cheap and correct: hasPermission() is
+  // re-checked before every execution below regardless, this just keeps
+  // the model from wasting a turn attempting a tool it'll be denied anyway.
+  const availableTools = getToolsForUser(user);
+
   // Anthropic requires conversations to start with a user message.
   // The UI seeds a greeting (role: assistant) before any user turn — strip it.
   const msgHistory = messages
@@ -829,7 +967,7 @@ async function streamChat(res, messages, module, appName, userId = null) {
         max_tokens: MAX_TOKENS,
         system,
         messages:   msgHistory,
-        tools:      TOOL_DEFINITIONS,
+        tools:      availableTools,
         tool_choice: { type: 'auto' },
       });
 
@@ -851,13 +989,35 @@ async function streamChat(res, messages, module, appName, userId = null) {
     // Push the assistant's tool_use message to history
     msgHistory.push({ role: 'assistant', content: final.content });
 
-    // Execute all tool calls (parallel)
+    // Execute all tool calls (parallel).
+    // Security remediation C-02 — re-check authorization here, not just at
+    // the tool-list-filtering step above: the model only sees an
+    // already-filtered list, but nothing stops a malicious/malformed
+    // request from naming an unlisted tool directly. TOOL_POLICY is
+    // deny-by-default for exactly that reason — an unrecognized tool name
+    // has no policy entry, so `authorized` short-circuits false and
+    // executeTool() is never called.
     const toolUseBlocks = final.content.filter((b) => b.type === 'tool_use');
     const toolResults   = await Promise.all(
       toolUseBlocks.map(async (block) => {
+        const policy = TOOL_POLICY[block.name];
+        const authorized = policy && hasPermission(user, policy.permissions);
         let result;
-        try   { result = await executeTool(block.name, block.input, userId); }
-        catch (err) { result = { error: err.message }; }
+        if (!authorized) {
+          result = { error: 'You do not have permission to use this feature.' };
+        } else {
+          try   { result = await executeTool(block.name, block.input, user); }
+          catch (err) { result = { error: err.message }; }
+        }
+        // Best-effort, not required:true — this is a high-volume feature
+        // (every tool call, potentially several per chat turn) and a
+        // logging failure must never break the assistant's response.
+        logActivity({
+          userId: user?.id ?? null, entityType: 'user', entityId: user?.id ?? null,
+          action: 'ai_tool_call',
+          description: `${user?.email || 'unknown'} ${authorized ? 'used' : 'was denied'} AI tool ${block.name}`,
+          meta: { tool: block.name, input: block.input, authorized },
+        }).catch(() => {});
         return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) };
       }),
     );
@@ -871,6 +1031,10 @@ async function streamChat(res, messages, module, appName, userId = null) {
   res.end();
 }
 
-// markdownToHtml is exported for direct testing (security remediation C-05
-// regression test) — it has no other external caller.
-module.exports = { streamChat, loadKnowledge, getSettings, isAvailable, MASKED, markdownToHtml };
+// markdownToHtml, TOOL_POLICY, hasPermission, getToolsForUser, and
+// executeTool are exported for direct testing (security remediation C-05
+// and C-02 regression tests) — none has another external caller.
+module.exports = {
+  streamChat, loadKnowledge, getSettings, isAvailable, MASKED, markdownToHtml,
+  TOOL_POLICY, hasPermission, getToolsForUser, executeTool,
+};

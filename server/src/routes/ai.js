@@ -55,7 +55,7 @@ router.post('/chat', requireStaffAccess, aiChatLimiter, async (req, res, next) =
       return res.status(400).json({ error: 'messages array required' });
     }
     const [[biz]] = await db.query('SELECT business_name FROM business_settings LIMIT 1').catch(() => [[null]]);
-    await streamChat(res, messages, module || null, biz?.business_name || 'LIT-CRM', req.user.id);
+    await streamChat(res, messages, module || null, biz?.business_name || 'LIT-CRM', req.user);
   } catch (err) {
     if (!res.headersSent) return next(err);
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
