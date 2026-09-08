@@ -83,6 +83,16 @@ const DEFAULTS = {
     allow_update_payment_method:    false,
     portal_subdomain:               '',
   },
+  // Security remediation H-01 (Phase 3) — org-wide MFA toggle. Off by
+  // default: some small nonprofits running this app won't want to require
+  // it. When true, every user holding one of MFA_MANDATORY_PERMISSIONS
+  // (services/mfa.js) must have TOTP enrolled to use the permission that
+  // requires it — see requirePermission() in middleware/auth.js. Turning
+  // this on never locks anyone out of logging in; it blocks the specific
+  // privileged actions until they enroll.
+  security: {
+    mfa_enabled: false,
+  },
 };
 
 async function get(module) {

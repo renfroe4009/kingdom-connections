@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { db } = require('../db');
 const { logActivity } = require('../services/activity');
+const { isMfaEnabledOrgWide, permissionsRequireMfa, getMfaStatus } = require('../services/mfa');
 
 // JWT_SECRET is required — no fallback. We previously fell back to 'dev-secret'
 // which meant any reader of this file could forge tokens for any user. Refuse
@@ -55,6 +56,12 @@ async function loadUserFromRequest(req) {
     }
     throw err;
   }
+
+  // Security remediation H-01 — an mfa_pending token (issued mid-login,
+  // before the second factor is verified) must never work as a real
+  // session token. Without this check it would: it has a valid `sub` and
+  // signature, and nothing else here inspects the claim.
+  if (decoded.mfa_pending) return { user: null, reason: 'invalid_token' };
 
   // Security remediation H-05 — explicit per-token revocation (logout).
   // Tokens signed before this fix shipped have no `jti` and can't match a
@@ -154,29 +161,108 @@ async function tryAuth(req, _res, next) {
 }
 
 function requirePermission(...needed) {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: 'Unauthenticated' });
+      const isAdmin = req.user.roles?.includes('admin');
+      if (!isAdmin) {
+        const have = new Set(req.user.permissions || []);
+        const ok = needed.every((p) => have.has(p));
+        if (!ok) {
+          // Security remediation M-07 — this is the single choke point for
+          // every requirePermission() check in the app, so logging here gives
+          // near-total coverage of permission denials with one change instead
+          // of touching ~500 routes individually. Fire-and-forget, best-effort
+          // (not required:true) — a 403 response must stay fast and must
+          // never itself fail because logging it failed; unlike the other
+          // M-07 events this one is high-volume and largely informational (a
+          // user clicking a button their role can't use is routine, not
+          // necessarily an attack).
+          logActivity({
+            userId: req.user.id, entityType: 'user', entityId: req.user.id, action: 'permission_denied',
+            description: `${req.user.email} denied ${req.method} ${req.originalUrl} (missing: ${needed.join(', ')})`,
+          }).catch(() => {});
+          return res.status(403).json({ error: 'Forbidden', required: needed });
+        }
+      }
+
+      // Security remediation H-01 — MFA step-up gate. Runs only after
+      // permission is otherwise granted (admin bypass or an explicit
+      // match), so a caller who wouldn't be allowed anyway gets a plain
+      // 403 rather than one that leaks "you'd be allowed if only you had
+      // MFA enrolled." Gated on the SPECIFIC permission(s) this route
+      // needs, not on "is this caller an admin" — admin naturally trips
+      // this for every one of the 5 mandatory permissions anyway (it holds
+      // all of them), which is what actually matters; gating literally
+      // every admin action regardless of sensitivity turned an unenrolled
+      // admin's very first click after enabling org MFA into a total
+      // lockout, including from the settings.manage route needed to turn
+      // it back off. Deliberately not using isAdmin here.
+      if (permissionsRequireMfa(needed)) {
+        if (await isMfaEnabledOrgWide()) {
+          const status = await getMfaStatus(req.user.id);
+          if (!status.enrolled) {
+            return res.status(403).json({
+              error: 'Two-factor authentication is required for this action. Set it up under Settings → Security.',
+              mfa_setup_required: true,
+            });
+          }
+        }
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+// Security remediation H-01 — a short-lived (5 min), minimal-claim token
+// issued after a correct password when the user has TOTP confirmed. Carries
+// NO permissions/roles and is accepted only by POST /auth/mfa/verify —
+// loadUserFromRequest() explicitly refuses to treat it as a real session
+// (see the `decoded.mfa_pending` check below), so a password alone can
+// never substitute for the second factor even if this token leaks.
+function signMfaPendingToken(userId) {
+  return jwt.sign({ sub: userId, mfa_pending: true }, JWT_SECRET, { expiresIn: '5m' });
+}
+
+// Verifies an mfa_pending token specifically (POST /auth/mfa/verify's own
+// auth mechanism, distinct from requireAuth's bearer-token flow) — returns
+// the decoded payload, or null for anything invalid/expired/not actually a
+// pending token. Keeps JWT_SECRET encapsulated in this module rather than
+// exporting it.
+function verifyMfaPendingToken(token) {
+  let decoded;
+  try {
+    decoded = jwt.verify(token, JWT_SECRET);
+  } catch (_e) {
+    return null;
+  }
+  return decoded.mfa_pending ? decoded : null;
+}
+
+// Security remediation H-01 — escape hatch for the org-wide MFA toggle
+// itself (PUT/GET /api/settings/module/security). Every other
+// settings.manage-gated route stays behind the MFA gate above, but
+// settings.manage is itself in MFA_MANDATORY_PERMISSIONS — without this,
+// an admin who turns org MFA on without having enrolled first would have
+// no way to ever turn it back off again (the only route that could undo
+// it would itself demand the MFA enrollment it's trying to disable). Same
+// permission check as requirePermission, deliberately without the MFA
+// block.
+function requirePermissionNoMfaGate(...needed) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthenticated' });
     if (req.user.roles?.includes('admin')) return next();
     const have = new Set(req.user.permissions || []);
-    const ok = needed.every((p) => have.has(p));
-    if (!ok) {
-      // Security remediation M-07 — this is the single choke point for
-      // every requirePermission() check in the app, so logging here gives
-      // near-total coverage of permission denials with one change instead
-      // of touching ~500 routes individually. Fire-and-forget, best-effort
-      // (not required:true) — a 403 response must stay fast and must
-      // never itself fail because logging it failed; unlike the other
-      // M-07 events this one is high-volume and largely informational (a
-      // user clicking a button their role can't use is routine, not
-      // necessarily an attack).
-      logActivity({
-        userId: req.user.id, entityType: 'user', entityId: req.user.id, action: 'permission_denied',
-        description: `${req.user.email} denied ${req.method} ${req.originalUrl} (missing: ${needed.join(', ')})`,
-      }).catch(() => {});
+    if (!needed.every((p) => have.has(p))) {
       return res.status(403).json({ error: 'Forbidden', required: needed });
     }
     next();
   };
 }
 
-module.exports = { signToken, requireAuth, tryAuth, requirePermission };
+module.exports = {
+  signToken, signMfaPendingToken, verifyMfaPendingToken,
+  requireAuth, tryAuth, requirePermission, requirePermissionNoMfaGate,
+};

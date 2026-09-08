@@ -7,9 +7,10 @@ const crypto = require('crypto');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { z } = require('zod');
 const { db } = require('../db');
-const { signToken, requireAuth } = require('../middleware/auth');
+const { signToken, signMfaPendingToken, verifyMfaPendingToken, requireAuth } = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
 const { passwordSchema, hashPassword, needsRehash, isPasswordBreached } = require('../services/passwordPolicy');
+const mfa = require('../services/mfa');
 
 // Security remediation M-05 — a non-existent email returned in a few ms
 // (no bcrypt.compare call at all), while an existing one cost ~100ms for the
@@ -49,6 +50,34 @@ const loginLimiter = rateLimit({
   },
 });
 
+// Builds the real session response (token + hydrated user) — shared by the
+// normal login path and POST /mfa/verify's final step, since both end the
+// same way once the caller is fully authenticated.
+async function buildSessionResponse(user) {
+  const token = signToken(user, { epoch: user.token_epoch });
+  const { password_hash, token_epoch, ...safe } = user;
+
+  const [roleRows] = await db.query(
+    `SELECT r.name FROM roles r
+       JOIN user_roles ur ON ur.role_id = r.id
+      WHERE ur.user_id = :id`,
+    { id: user.id }
+  );
+  safe.roles = roleRows.map((r) => r.name);
+
+  const [permRows] = await db.query(
+    `SELECT DISTINCT p.\`key\`
+       FROM permissions p
+       JOIN role_permissions rp ON rp.permission_id = p.id
+       JOIN user_roles ur       ON ur.role_id = rp.role_id
+      WHERE ur.user_id = :id`,
+    { id: user.id }
+  );
+  safe.permissions = permRows.map((r) => r.key);
+
+  return { token, user: safe };
+}
+
 router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
@@ -85,29 +114,140 @@ router.post('/login', loginLimiter, async (req, res, next) => {
       { uid: user.id }
     );
 
-    const token = signToken(user, { epoch: user.token_epoch });
-    const { password_hash, token_epoch, ...safe } = user;
+    // Security remediation H-01 — if this account has TOTP confirmed, the
+    // password alone isn't enough: issue a short-lived pending token and
+    // require POST /mfa/verify before a real session is granted.
+    const status = await mfa.getMfaStatus(user.id);
+    if (status.enrolled) {
+      return res.json({ mfa_required: true, mfa_token: signMfaPendingToken(user.id) });
+    }
 
-    // Hydrate roles + permissions so the client's `can()` works immediately after login.
-    const [roleRows] = await db.query(
-      `SELECT r.name FROM roles r
-         JOIN user_roles ur ON ur.role_id = r.id
-        WHERE ur.user_id = :id`,
-      { id: user.id }
+    res.json(await buildSessionResponse(user));
+  } catch (err) { next(err); }
+});
+
+// ---------------------------------------------------------------------------
+// MFA (security remediation H-01 / Phase 3) — TOTP only, see services/mfa.js
+// for the full design rationale and the org-wide enforcement model.
+// ---------------------------------------------------------------------------
+
+router.get('/mfa/status', requireAuth, async (req, res, next) => {
+  try {
+    res.json(await mfa.getMfaStatus(req.user.id));
+  } catch (err) { next(err); }
+});
+
+router.post('/mfa/totp/setup', requireAuth, async (req, res, next) => {
+  try {
+    const { secret, otpauthUrl, qrDataUrl } = await mfa.beginEnrollment(req.user);
+    res.json({ secret, otpauth_url: otpauthUrl, qr_data_url: qrDataUrl });
+  } catch (err) { next(err); }
+});
+
+router.post('/mfa/totp/confirm', requireAuth, async (req, res, next) => {
+  try {
+    const { code } = z.object({ code: z.string().min(6).max(10) }).parse(req.body);
+    const result = await mfa.confirmEnrollment(req.user.id, code);
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    await db.query(
+      `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
+         VALUES (:uid, 'user', :uid, 'mfa_enrolled', 'Two-factor authentication enabled')`,
+      { uid: req.user.id }
     );
-    safe.roles = roleRows.map((r) => r.name);
+    res.json({ ok: true, recovery_codes: result.recoveryCodes });
+  } catch (err) { next(err); }
+});
 
-    const [permRows] = await db.query(
-      `SELECT DISTINCT p.\`key\`
-         FROM permissions p
-         JOIN role_permissions rp ON rp.permission_id = p.id
-         JOIN user_roles ur       ON ur.role_id = rp.role_id
-        WHERE ur.user_id = :id`,
-      { id: user.id }
+router.post('/mfa/disable', requireAuth, async (req, res, next) => {
+  try {
+    const { password } = z.object({ password: z.string().min(1) }).parse(req.body);
+    const [[row]] = await db.query('SELECT password_hash FROM users WHERE id = :id', { id: req.user.id });
+    const ok = await bcrypt.compare(password, row.password_hash);
+    if (!ok) return res.status(400).json({ error: 'Current password is incorrect.' });
+    await mfa.disableMfa(req.user.id);
+    await db.query(
+      `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
+         VALUES (:uid, 'user', :uid, 'mfa_disabled', 'Two-factor authentication disabled')`,
+      { uid: req.user.id }
     );
-    safe.permissions = permRows.map((r) => r.key);
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
 
-    res.json({ token, user: safe });
+router.post('/mfa/recovery-codes/regenerate', requireAuth, async (req, res, next) => {
+  try {
+    const { password } = z.object({ password: z.string().min(1) }).parse(req.body);
+    const [[row]] = await db.query('SELECT password_hash FROM users WHERE id = :id', { id: req.user.id });
+    const ok = await bcrypt.compare(password, row.password_hash);
+    if (!ok) return res.status(400).json({ error: 'Current password is incorrect.' });
+    const status = await mfa.getMfaStatus(req.user.id);
+    if (!status.enrolled) return res.status(400).json({ error: 'MFA is not enrolled for this account.' });
+
+    const { raw, hashed } = mfa.generateRecoveryCodes();
+    await db.query('DELETE FROM user_mfa_recovery_codes WHERE user_id = :id', { id: req.user.id });
+    for (const hash of hashed) {
+      await db.query('INSERT INTO user_mfa_recovery_codes (user_id, code_hash) VALUES (:id, :hash)', { id: req.user.id, hash });
+    }
+    await db.query(
+      `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
+         VALUES (:uid, 'user', :uid, 'mfa_recovery_codes_regenerated', 'MFA recovery codes regenerated')`,
+      { uid: req.user.id }
+    );
+    res.json({ ok: true, recovery_codes: raw });
+  } catch (err) { next(err); }
+});
+
+// Security remediation H-01 — the audit's own recommendation: rate limit
+// verify attempts (5 per window here; the audit suggests a lock+alert,
+// which is a bigger notification-system change out of scope for this
+// pass — the rate limit itself is the concrete mitigation against brute-
+// forcing a 6-digit TOTP code or a recovery code).
+const mfaVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many verification attempts. Please wait 15 minutes and try again.' },
+});
+
+router.post('/mfa/verify', mfaVerifyLimiter, async (req, res, next) => {
+  try {
+    const { mfa_token, code, recovery_code } = z.object({
+      mfa_token: z.string().min(1),
+      code: z.string().optional(),
+      recovery_code: z.string().optional(),
+    }).parse(req.body);
+    if (!code && !recovery_code) return res.status(400).json({ error: 'code or recovery_code is required' });
+
+    const decoded = verifyMfaPendingToken(mfa_token);
+    if (!decoded) return res.status(401).json({ error: 'Verification session expired or invalid. Please log in again.' });
+
+    const [[user]] = await db.query(
+      `SELECT id, email, first_name, last_name, is_active, contact_id, default_dashboard, token_epoch
+         FROM users WHERE id = :id`,
+      { id: decoded.sub }
+    );
+    if (!user || !user.is_active) return res.status(401).json({ error: 'Invalid verification token.' });
+
+    const verified = await mfa.verifyLoginFactor(user.id, { code, recoveryCode: recovery_code });
+    if (!verified) {
+      // Security remediation H-01 — the audit explicitly calls out logging
+      // every failed verification attempt, not just successes.
+      await db.query(
+        `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
+           VALUES (:uid, 'user', :uid, 'mfa_verify_failed', 'Failed two-factor verification attempt')`,
+        { uid: user.id }
+      ).catch(() => {});
+      return res.status(400).json({ error: recovery_code ? 'Invalid or already-used recovery code.' : 'Invalid code.' });
+    }
+
+    await db.query(
+      `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
+         VALUES (:uid, 'user', :uid, 'mfa_verified', :desc)`,
+      { uid: user.id, desc: recovery_code ? 'Signed in with a recovery code' : 'Two-factor verification succeeded' }
+    );
+
+    res.json(await buildSessionResponse(user));
   } catch (err) { next(err); }
 });
 

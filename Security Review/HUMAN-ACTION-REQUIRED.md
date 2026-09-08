@@ -152,6 +152,22 @@ Server-side verification is built and ready (`server/src/services/captcha.js`) b
 
 No urgency — the other M-03 fixes (field allowlisting, per-field caps, empty-fields-only contact updates) close the worst part of the finding on their own.
 
+## 14. Build the MFA client UI before anyone can actually use it (Phase 3, H-01)
+
+The full TOTP MFA API is built, tested, and safe to deploy as-is (default OFF, no behavior change for anyone until you turn it on) — but **there is no client UI for any of it yet**. Specifically needed before this is usable end-to-end:
+
+- **Settings → Security page**: a toggle calling `GET`/`PUT /api/settings/module/security` (`{ mfa_enabled: bool }`).
+- **Personal MFA enrollment flow** (any user, e.g. under their own profile/account settings): call `POST /api/auth/mfa/totp/setup`, show the returned `qr_data_url` (already a ready-to-render `<img src>`) plus the raw `secret` as a manual-entry fallback, take a 6-digit code, call `POST /api/auth/mfa/totp/confirm`, then **display the 10 returned `recovery_codes` exactly once** (they're never retrievable again — the API only stores their hashes) with a clear "save these somewhere safe" prompt.
+- **Login step-up screen**: when `POST /api/auth/login` returns `{ mfa_required: true, mfa_token }` instead of a normal session, show a code-entry screen (plus a "use a recovery code instead" link) that calls `POST /api/auth/mfa/verify` with `{ mfa_token, code }` or `{ mfa_token, recovery_code }`, then handles the response exactly like a normal login response (it's the same shape).
+- **Disable MFA** and **regenerate recovery codes** actions, both just need a password re-entry prompt (`POST /api/auth/mfa/disable` / `POST /api/auth/mfa/recovery-codes/regenerate`).
+- Somewhere visible: surface the `mfa_setup_required: true` flag a 403 response can carry (once you turn the org toggle on) as a clear "set up two-factor authentication to continue" prompt rather than a generic error, for users who hold a mandatory permission but haven't enrolled yet.
+
+None of this is a large lift individually — ask me to build it whenever you're ready; I'd estimate it as a single focused session of client work.
+
+## 15. WebAuthn/passkeys were deliberately not built (Phase 3, H-01)
+
+Confirmed with you: TOTP only for this pass. The original audit's design also includes WebAuthn/passkey support (`user_mfa_credentials` table, `@simplewebauthn/server` + `@simplewebauthn/browser`, discoverable/usernameless login). This needs a real production RP-ID (the exact deployed domain) to configure and test properly — something this local session can't safely validate — so it's recorded here as a known, deliberate gap rather than built partially. If you want it later, the design is already fully specified in `SECURITY-AUDIT-2026-08-21.md` §7 and would layer in alongside the existing TOTP flow (both would satisfy MFA enrollment; a user could have either or both).
+
 ---
 
-*Last updated: end of Phase 4 (complete), this session. Phase 3 (MFA) is in progress next; Phase 5 (adversarial retest) follows it.*
+*Last updated: end of Phase 3 (complete, TOTP scope), this session. Phase 5 (adversarial retest) is next and last.*

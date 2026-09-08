@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const { z } = require('zod');
 const { db } = require('../db');
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, requirePermissionNoMfaGate } = require('../middleware/auth');
 const multer = require('multer');
 const storage = require('../services/storage');
 
@@ -279,9 +279,20 @@ router.delete('/business/logo/:slot', requirePermission('settings.manage'), asyn
 
 // -------- Module settings --------
 const moduleSettings = require('../services/moduleSettings');
-const VALID_MODULES  = new Set(['invoices', 'payments', 'contacts', 'organizations', 'deals', 'tasks', 'subscriptions']);
+const VALID_MODULES  = new Set(['invoices', 'payments', 'contacts', 'organizations', 'deals', 'tasks', 'subscriptions', 'security']);
 
-router.get('/module/:module', requirePermission('settings.manage'), async (req, res, next) => {
+// Security remediation H-01 — the 'security' module (the org-wide MFA
+// toggle) deliberately uses requirePermissionNoMfaGate, not
+// requirePermission: settings.manage is itself an MFA-mandatory
+// permission, so gating this specific route the normal way would mean an
+// admin who enables org MFA without having enrolled first could never
+// reach the one route that turns it back off. Every other module stays
+// behind the normal (MFA-gated) check.
+function moduleGate(module) {
+  return module === 'security' ? requirePermissionNoMfaGate('settings.manage') : requirePermission('settings.manage');
+}
+
+router.get('/module/:module', (req, res, next) => moduleGate(req.params.module)(req, res, next), async (req, res, next) => {
   try {
     const { module } = req.params;
     if (!VALID_MODULES.has(module)) return res.status(400).json({ error: 'Unknown module' });
@@ -289,7 +300,7 @@ router.get('/module/:module', requirePermission('settings.manage'), async (req, 
   } catch (err) { next(err); }
 });
 
-router.put('/module/:module', requirePermission('settings.manage'), async (req, res, next) => {
+router.put('/module/:module', (req, res, next) => moduleGate(req.params.module)(req, res, next), async (req, res, next) => {
   try {
     const { module } = req.params;
     if (!VALID_MODULES.has(module)) return res.status(400).json({ error: 'Unknown module' });
