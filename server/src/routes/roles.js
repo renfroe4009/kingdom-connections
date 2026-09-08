@@ -5,6 +5,7 @@ const router = require('express').Router();
 const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
+const { logActivity } = require('../services/activity');
 
 router.use(requireAuth);
 
@@ -92,6 +93,15 @@ router.post('/', requirePermission('roles.manage'), async (req, res, next) => {
       const values = data.permission_ids.map((pid) => [ins.insertId, pid]);
       await db.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ?', [values]);
     }
+    // Security remediation M-07 — role changes were never audit-logged at
+    // all. required:true so a failed log write fails the request instead
+    // of a new role silently existing with no trace of who created it.
+    await logActivity({
+      userId: req.user.id, entityType: 'role', entityId: ins.insertId, action: 'role_created',
+      description: `${req.user.email} created role "${data.name}"`,
+      meta: { permission_ids: data.permission_ids || [] },
+      required: true,
+    });
     res.status(201).json({ id: ins.insertId });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -139,6 +149,13 @@ router.put('/:id', requirePermission('roles.manage'), async (req, res, next) => 
         await db.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ?', [values]);
       }
     }
+    // Security remediation M-07 — non-optional, same reasoning as POST above.
+    await logActivity({
+      userId: req.user.id, entityType: 'role', entityId: id, action: 'role_updated',
+      description: `${req.user.email} updated role "${data.name}"`,
+      meta: { permission_ids: data.permission_ids },
+      required: true,
+    });
     res.json({ ok: true });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -148,9 +165,15 @@ router.put('/:id', requirePermission('roles.manage'), async (req, res, next) => 
 
 router.delete('/:id', requirePermission('roles.manage'), async (req, res, next) => {
   try {
-    const [rows] = await db.query('SELECT is_system FROM roles WHERE id = :id', { id: req.params.id });
+    const [rows] = await db.query('SELECT is_system, name FROM roles WHERE id = :id', { id: req.params.id });
     if (rows[0]?.is_system) return res.status(400).json({ error: 'Cannot delete a system role' });
     await db.query('DELETE FROM roles WHERE id = :id', { id: req.params.id });
+    // Security remediation M-07 — non-optional, same reasoning as above.
+    await logActivity({
+      userId: req.user.id, entityType: 'role', entityId: Number(req.params.id), action: 'role_deleted',
+      description: `${req.user.email} deleted role "${rows[0]?.name || req.params.id}"`,
+      required: true,
+    });
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

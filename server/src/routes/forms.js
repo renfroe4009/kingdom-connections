@@ -5,6 +5,7 @@
 // =============================================================================
 const express = require('express');
 const { z } = require('zod');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
@@ -12,6 +13,23 @@ const { triggerWorkflow } = require('../services/automations');
 const { ensureConstituentTag } = require('../services/constituents');
 
 const router = express.Router();
+
+// Security remediation H-07 — no rate limit meant unbounded spam and
+// unbounded contact/submission row growth. Keyed per form slug + IP so one
+// abusive submitter can't exhaust the budget for every other form on the
+// site, matching the audit's own suggested design (M-03 adds CAPTCHA on
+// top of this in a later phase).
+const formSubmitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // ipKeyGenerator normalizes IPv6 clients to their /64 prefix — otherwise
+  // an attacker on IPv6 can rotate the host suffix and bypass the limit
+  // (same reasoning as auth.js's loginLimiter).
+  keyGenerator: (req, res) => `form-submit:${req.params.slug}:${ipKeyGenerator(req, res)}`,
+  message: { error: 'Too many submissions. Please try again later.' },
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -98,7 +116,7 @@ router.get('/public/:slug', async (req, res, next) => {
 });
 
 // POST /api/forms/public/:slug/submit  — public, no auth
-router.post('/public/:slug/submit', async (req, res, next) => {
+router.post('/public/:slug/submit', formSubmitLimiter, async (req, res, next) => {
   try {
     const slug = req.params.slug;
     const [[form]] = await db.query(

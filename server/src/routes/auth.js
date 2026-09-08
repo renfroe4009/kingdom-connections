@@ -54,13 +54,16 @@ router.post('/login', loginLimiter, async (req, res, next) => {
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
     await db.query('UPDATE users SET last_login_at = NOW() WHERE id = :id', { id: user.id });
-    try {
-      await db.query(
-        `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
-           VALUES (:uid, 'user', :uid, 'login', 'User signed in')`,
-        { uid: user.id }
-      );
-    } catch (_e) { /* non-fatal */ }
+    // Security remediation M-07 — login is a security-relevant event; a
+    // silently-failed audit write means a login (including an attacker's)
+    // leaves no trace. Not wrapped in its own try/catch — a failure here
+    // propagates to the route's own catch → next(err), failing the request
+    // rather than silently vanishing.
+    await db.query(
+      `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
+         VALUES (:uid, 'user', :uid, 'login', 'User signed in')`,
+      { uid: user.id }
+    );
 
     const token = signToken(user);
     const { password_hash, ...safe } = user;
@@ -103,16 +106,22 @@ router.put('/me/dashboard', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/logout', requireAuth, async (req, res) => {
-  // Stateless JWT — client drops the token. Server-side we just log the event.
+router.post('/logout', requireAuth, async (req, res, next) => {
+  // Stateless JWT — client drops the token. Server-side we just log the
+  // event. Security remediation M-07 — logout is security-relevant; let a
+  // failed audit write fail the request via next(err) rather than
+  // silently vanishing (this handler previously had no next() at all, so
+  // a thrown error here would have gone unhandled instead of erroring
+  // cleanly — fixed as part of removing the swallow, not just the swallow
+  // itself).
   try {
     await db.query(
       `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
          VALUES (:uid, 'user', :uid, 'logout', 'User signed out')`,
       { uid: req.user.id }
     );
-  } catch (_e) { /* non-fatal */ }
-  res.json({ ok: true });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
 // ---------------------------------------------------------------------------
@@ -188,7 +197,19 @@ router.post('/forgot-password', forgotLimiter, async (req, res, next) => {
 // POST /reset-password
 // Validates the raw token against the stored hash, updates the password.
 // ---------------------------------------------------------------------------
-router.post('/reset-password', async (req, res, next) => {
+// Security remediation H-07 — the token itself is the only secret here
+// (256-bit random per the token-generation code above), but with no limit
+// at all an attacker could brute-force guess it directly against this
+// endpoint. Matches forgotLimiter's shape.
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait 15 minutes and try again.' },
+});
+
+router.post('/reset-password', resetLimiter, async (req, res, next) => {
   try {
     const { token, password } = z.object({
       token:    z.string().min(1),
@@ -220,13 +241,14 @@ router.post('/reset-password', async (req, res, next) => {
       { hash: newHash, id: user.id }
     );
 
-    try {
-      await db.query(
-        `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
-           VALUES (:id, 'user', :id, 'password_reset', 'Password reset via email link')`,
-        { id: user.id }
-      );
-    } catch (_e) { /* non-fatal */ }
+    // Security remediation M-07 — password reset is security-relevant;
+    // propagates to the outer catch → next(err) on failure, same reasoning
+    // as the login/logout sites above.
+    await db.query(
+      `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
+         VALUES (:id, 'user', :id, 'password_reset', 'Password reset via email link')`,
+      { id: user.id }
+    );
 
     res.json({ ok: true });
   } catch (err) { next(err); }

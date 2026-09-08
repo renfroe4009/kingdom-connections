@@ -1,8 +1,19 @@
 const express = require('express');
+const { rateLimit } = require('express-rate-limit');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Security remediation H-07 — 5 parallel LIKE-scan queries per request,
+// unauthenticated, no limit at all before this — a cheap DoS lever.
+const searchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many search requests. Please slow down.' },
+});
 
 // ── Pages ──────────────────────────────────────────────────────────────────────
 
@@ -275,7 +286,7 @@ router.put('/settings', requireAuth, requirePermission('settings.manage'), async
 });
 
 // GET /api/website/search?q=term  — searches all public content types
-router.get('/search', async (req, res) => {
+router.get('/search', searchLimiter, async (req, res) => {
   try {
     const { q = '' } = req.query;
     if (!q.trim()) return res.json([]);

@@ -7,6 +7,7 @@ const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth, requirePermission, signToken } = require('../middleware/auth');
 const { resolveOwnerScope } = require('../services/scope');
+const { logActivity } = require('../services/activity');
 
 router.use(requireAuth);
 
@@ -160,6 +161,16 @@ router.post('/', requirePermission('users.manage'), async (req, res, next) => {
     if (data.role_ids?.length) {
       const values = data.role_ids.map((rid) => [userId, rid]);
       await db.query('INSERT INTO user_roles (user_id, role_id) VALUES ?', [values]);
+      // Security remediation M-07 — role assignment at account creation is
+      // exactly the class of event C-03 was about; required:true so a
+      // failed log write fails the request rather than a new privileged
+      // account existing with no trace of who granted it which roles.
+      await logActivity({
+        userId: req.user.id, entityType: 'user', entityId: userId, action: 'role_assigned',
+        description: `${req.user.email} created user ${data.email} with role_ids [${data.role_ids.join(', ')}]`,
+        meta: { role_ids: data.role_ids },
+        required: true,
+      });
     }
     res.status(201).json({ id: userId });
   } catch (err) { next(err); }
@@ -213,6 +224,13 @@ router.put('/:id', requirePermission('users.manage'), async (req, res, next) => 
         const values = data.role_ids.map((rid) => [id, rid]);
         await db.query('INSERT INTO user_roles (user_id, role_id) VALUES ?', [values]);
       }
+      // Security remediation M-07 — non-optional, same reasoning as POST above.
+      await logActivity({
+        userId: req.user.id, entityType: 'user', entityId: id, action: 'role_assigned',
+        description: `${req.user.email} set user ${id}'s roles to [${data.role_ids.join(', ')}]`,
+        meta: { role_ids: data.role_ids },
+        required: true,
+      });
     }
     res.json({ ok: true });
   } catch (err) { next(err); }
@@ -262,9 +280,10 @@ router.post('/:id/impersonate', requirePermission('users.impersonate'), async (r
       { impersonating_as: targetId, expiresIn: '2h' }
     );
 
-    // Log the impersonation
-    const { db: dbConn } = require('../db');
-    await dbConn.query(
+    // Log the impersonation (security remediation M-07 — non-optional; a
+    // failure here propagates to the route's own catch → next(err) rather
+    // than silently letting an impersonation session start untracked).
+    await db.query(
       `INSERT INTO activities (user_id, entity_type, entity_id, action, description)
        VALUES (:uid, 'user', :tid, 'impersonate_start',
                :desc)`,
@@ -273,7 +292,7 @@ router.post('/:id/impersonate', requirePermission('users.impersonate'), async (r
         tid: targetId,
         desc: `Manager ${req.user.email} started impersonating ${target.email}`,
       }
-    ).catch(() => {}); // non-fatal
+    );
 
     res.json({
       token,

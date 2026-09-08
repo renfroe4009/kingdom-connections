@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS `activities`;
 CREATE TABLE `activities` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `user_id` int unsigned DEFAULT NULL,
-  `entity_type` enum('contact','organization','deal','task','user','invoice','payment','subscription','recurring_invoice','volunteer_compliance_item') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `entity_type` enum('contact','organization','deal','task','user','invoice','payment','subscription','recurring_invoice','volunteer_compliance_item','role') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `entity_id` int unsigned NOT NULL,
   `action` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,

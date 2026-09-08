@@ -3,6 +3,7 @@
 // =============================================================================
 const jwt = require('jsonwebtoken');
 const { db } = require('../db');
+const { logActivity } = require('../services/activity');
 
 // JWT_SECRET is required — no fallback. We previously fell back to 'dev-secret'
 // which meant any reader of this file could forge tokens for any user. Refuse
@@ -124,7 +125,22 @@ function requirePermission(...needed) {
     if (req.user.roles?.includes('admin')) return next();
     const have = new Set(req.user.permissions || []);
     const ok = needed.every((p) => have.has(p));
-    if (!ok) return res.status(403).json({ error: 'Forbidden', required: needed });
+    if (!ok) {
+      // Security remediation M-07 — this is the single choke point for
+      // every requirePermission() check in the app, so logging here gives
+      // near-total coverage of permission denials with one change instead
+      // of touching ~500 routes individually. Fire-and-forget, best-effort
+      // (not required:true) — a 403 response must stay fast and must
+      // never itself fail because logging it failed; unlike the other
+      // M-07 events this one is high-volume and largely informational (a
+      // user clicking a button their role can't use is routine, not
+      // necessarily an attack).
+      logActivity({
+        userId: req.user.id, entityType: 'user', entityId: req.user.id, action: 'permission_denied',
+        description: `${req.user.email} denied ${req.method} ${req.originalUrl} (missing: ${needed.join(', ')})`,
+      }).catch(() => {});
+      return res.status(403).json({ error: 'Forbidden', required: needed });
+    }
     next();
   };
 }

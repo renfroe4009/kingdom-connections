@@ -109,4 +109,16 @@ Same open item as #3 above (was flagged in Phase 0 before H-11 was fixed) — ma
 
 ---
 
-*Last updated: end of Phase 2 (in progress), this session. C-02's full fix (Phase 1) and H-07/H-05/M-07 (Phase 2) still pending.*
+## 9. Run the `activities.entity_type` enum migration against production (Phase 2, M-07)
+
+Role-change activity logging (`role_created`/`role_updated`/`role_deleted`) needed a new `'role'` value added to `activities.entity_type`'s ENUM — a real schema change, separate from the gateway-secrets migration in #7. Run this against production too:
+
+```bash
+cd server && node scripts/ensure-activities-role-entity-type.js --host <prod-db-host> --database <prod-db-name> --user <prod-db-user> --password <prod-db-password>
+```
+
+Safe to re-run (checks the current enum before altering). **This one is more time-sensitive than most of the migrations in this list** — the code that depends on it (`roles.js`'s role-create/update/delete logging) is `required: true`, meaning until this migration runs, every role create/update/delete request in production will fail outright (500) rather than just silently missing its audit-log entry.
+
+---
+
+*Last updated: end of Phase 2 (complete except H-05), this session. C-02's full fix (Phase 1) and H-05 (Phase 2) still pending.*

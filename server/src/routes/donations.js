@@ -32,6 +32,19 @@ const finalizeLimiter = rateLimit({
   skip: () => process.env.NODE_ENV !== 'production',
 });
 
+// Security remediation H-07 — creating a donation checkout (a synthetic
+// invoice) is the first step of the same card-testing/carding risk
+// payments.js's publicPaymentLimiter already guards on the actual charge
+// step; this closes the same gap one step earlier.
+const checkoutLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests — please wait before trying again.' },
+  skip: () => process.env.NODE_ENV !== 'production',
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -150,7 +163,7 @@ router.get('/public/fee-info', async (req, res, next) => {
 // one-time donation. Returns an invoiceId the existing public payment
 // endpoints (/api/payments/public/checkout/:id, /public/charge/:id) then run
 // through unchanged, exactly like paying any other invoice.
-router.post('/public/checkout', async (req, res, next) => {
+router.post('/public/checkout', checkoutLimiter, async (req, res, next) => {
   try {
     const body = req.body || {};
     const amount = Number(body.amount);

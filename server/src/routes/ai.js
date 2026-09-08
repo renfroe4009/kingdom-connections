@@ -5,11 +5,24 @@
 
 const router = require('express').Router();
 const { z }  = require('zod');
+const { rateLimit } = require('express-rate-limit');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { streamChat, loadKnowledge, getSettings } = require('../services/ai');
 
 router.use(requireAuth);
+
+// Security remediation H-07 — unbounded use here means unbounded Anthropic
+// API spend (financial DoS) on top of database load. Keyed per-user, not
+// IP, since every caller is already authenticated by this point.
+const aiChatLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `ai-chat:${req.user.id}`,
+  message: { error: 'Too many requests to the assistant. Please wait a few minutes and try again.' },
+});
 
 // Interim authorization gate (Phase 0 of the 2026 security remediation —
 // see Security Review/SECURITY-AUDIT-2026-08-21.md finding C-02). The tool
@@ -35,7 +48,7 @@ function requireStaffAccess(req, res, next) {
 // ── POST /api/ai/chat ─────────────────────────────────────────────────────────
 // Body: { messages: [{role, content}], module?: string }
 // Returns an SSE stream of { text } chunks, ending with [DONE].
-router.post('/chat', requireStaffAccess, async (req, res, next) => {
+router.post('/chat', requireStaffAccess, aiChatLimiter, async (req, res, next) => {
   try {
     const { messages, module } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {

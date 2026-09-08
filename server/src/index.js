@@ -149,6 +149,23 @@ app.get('/api/health', async (_req, res) => {
   });
 });
 
+// Global baseline rate limit (security remediation H-07) — a backstop for
+// the majority of the ~500 endpoints that have no dedicated limiter of
+// their own. Deliberately generous (this is a safety net, not the primary
+// control) — routes with a real abuse profile get their own tighter
+// limiter layered on top, keyed more specifically than raw IP where it
+// matters (e.g. the event check-in PIN limiter in services/checkinPin.js
+// is keyed per-event, not per-IP). Mounted after /api/health so uptime
+// monitoring never trips it.
+const { rateLimit: globalRateLimit } = require('express-rate-limit');
+app.use('/api', globalRateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down and try again shortly.' },
+}));
+
 // Routes
 app.use('/api/auth',          authRoutes);
 app.use('/api/users',         usersRoutes);

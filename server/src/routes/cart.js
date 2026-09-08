@@ -12,9 +12,21 @@
 // =============================================================================
 const router = require('express').Router();
 const crypto = require('crypto');
+const { rateLimit } = require('express-rate-limit');
 const { db } = require('../db');
 
 const HOLD_MINUTES = 15;
+
+// Security remediation H-07 — no limit meant an attacker could exhaust
+// ticket-hold capacity (denial of inventory) with repeated adds, holding
+// nothing back for real shoppers.
+const cartItemsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
 
 async function getOrCreateCart(req) {
   const token = req.headers['x-cart-token'];
@@ -104,7 +116,7 @@ router.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/items', async (req, res, next) => {
+router.post('/items', cartItemsLimiter, async (req, res, next) => {
   try {
     const { product_id, ticket_type_id, qty = 1 } = req.body;
     if (!product_id && !ticket_type_id) return res.status(400).json({ error: 'product_id or ticket_type_id required' });
