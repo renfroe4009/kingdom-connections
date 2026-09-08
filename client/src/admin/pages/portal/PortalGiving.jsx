@@ -50,7 +50,10 @@ export default function PortalGiving() {
 
   async function handleGiveSuccess() {
     try {
-      await api.post(`/donations/public/finalize/${giveCheckout.invoiceId}`, { fund_slug: fundSlug || null });
+      await api.post(`/donations/public/finalize/${giveCheckout.invoiceId}`, {
+        fund_slug: fundSlug || null,
+        payment_token: giveCheckout.payment_token,
+      });
     } catch { /* payment already captured — finalize is best-effort tagging */ }
     setGiveCheckout(null);
     setSelectedAmt(null);

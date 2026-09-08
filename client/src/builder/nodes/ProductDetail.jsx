@@ -8,6 +8,7 @@ import AddToCartButton from '../../frontend/components/AddToCartButton.jsx';
 import PriceDisplay from '../../frontend/components/PriceDisplay.jsx';
 import { FieldGroup, SelectField, TextField, ToggleField } from '../fields/index.jsx';
 import { cx, useDomIdentity, useIsEditing, useNodeRef, IDENTITY_DEFAULTS } from './nodeUtils.js';
+import { sanitizeHtml } from '../../utils/sanitizeHtml.js';
 
 const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const resolveImage = (url) => (!url || /^https?:\/\//.test(url) ? url : `${API_ORIGIN}${url}`);
@@ -53,7 +54,7 @@ export default function ProductDetail({ slug, showImage, showDescription, showPr
           </div>
         )}
         {showDescription && (product.description || product.short_desc) && (
-          <div className="bx-text" dangerouslySetInnerHTML={{ __html: product.description || product.short_desc }} />
+          <div className="bx-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(product.description || product.short_desc) }} />
         )}
         {showAddToCart && (editing
           ? <span className="bx-btn" style={{ alignSelf: 'flex-start' }}>Add to cart</span>

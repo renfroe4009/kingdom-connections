@@ -6,6 +6,7 @@ const express = require('express');
 const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
+const { sanitizeHtml } = require('../services/sanitizeHtml');
 
 const router = express.Router();
 
@@ -99,7 +100,7 @@ router.post('/pages', requireAuth, requirePermission('settings.manage'), async (
         slug:       body.slug,
         status:     body.status || 'draft',
         body_json:  body.body_json  ?? null,
-        body_html:  body.body_html  ?? null,
+        body_html:  sanitizeHtml(body.body_html) ?? null,
         meta_title: body.meta_title ?? null,
         meta_desc:  body.meta_desc  ?? null,
         og_image:   body.og_image   ?? null,
@@ -115,6 +116,7 @@ router.put('/pages/:id', requireAuth, requirePermission('settings.manage'), asyn
     const id   = Number(req.params.id);
     const body = pageSchema.partial().parse(req.body);
     if (body.title && !body.slug) body.slug = toSlug(body.title);
+    if (body.body_html !== undefined) body.body_html = sanitizeHtml(body.body_html);
     const fields = [];
     const params = { id };
     for (const [k, v] of Object.entries(body)) {
@@ -207,7 +209,7 @@ router.post('/blog', requireAuth, requirePermission('settings.manage'), async (r
         status:       body.status       || 'draft',
         excerpt:      body.excerpt      ?? null,
         body_json:    body.body_json    ?? null,
-        body_html:    body.body_html    ?? null,
+        body_html:    sanitizeHtml(body.body_html) ?? null,
         og_image:     body.og_image     ?? null,
         meta_title:   body.meta_title   ?? null,
         meta_desc:    body.meta_desc    ?? null,
@@ -225,6 +227,7 @@ router.put('/blog/:id', requireAuth, requirePermission('settings.manage'), async
     const id   = Number(req.params.id);
     const body = blogSchema.partial().parse(req.body);
     if (body.title && !body.slug) body.slug = toSlug(body.title);
+    if (body.body_html !== undefined) body.body_html = sanitizeHtml(body.body_html);
 
     // Auto-set published_at when status flips to published
     if (body.status === 'published') {

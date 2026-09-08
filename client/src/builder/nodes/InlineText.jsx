@@ -10,6 +10,7 @@
 // the source of truth in between.
 
 import { forwardRef, useEffect, useRef } from 'react';
+import { sanitizeHtml } from '../../utils/sanitizeHtml.js';
 
 function setContent(el, value, rich) {
   if (!el) return;
@@ -50,7 +51,7 @@ const InlineText = forwardRef(function InlineText(
 
   if (!editable) {
     return rich ? (
-      <Tag ref={attach} className={className} style={style} dangerouslySetInnerHTML={{ __html: value || '' }} {...rest} />
+      <Tag ref={attach} className={className} style={style} dangerouslySetInnerHTML={{ __html: sanitizeHtml(value || '') }} {...rest} />
     ) : (
       <Tag ref={attach} className={className} style={style} {...rest}>
         {value}

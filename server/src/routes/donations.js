@@ -12,13 +12,25 @@
 // =============================================================================
 const express = require('express');
 const crypto = require('crypto');
+const { rateLimit } = require('express-rate-limit');
 const { db } = require('../db');
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, tryAuth, requirePermission } = require('../middleware/auth');
 const { getDefaultGateway } = require('../services/gateways');
 const moduleSettings = require('../services/moduleSettings');
 const { ensureConstituentTag, notifyDonationCaptured } = require('../services/constituents');
 
 const router = express.Router();
+
+// Matches payments.js's publicPaymentLimiter style/rationale — skip outside
+// production so local dev/testing isn't throttled.
+const finalizeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests — please wait before trying again.' },
+  skip: () => process.env.NODE_ENV !== 'production',
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -202,7 +214,9 @@ router.post('/public/checkout', async (req, res, next) => {
       );
     }
 
-    res.status(201).json({ invoiceId, total, feeAmount, contactId });
+    // payment_token proves to /public/finalize below that the caller is the
+    // one this checkout was actually handed to (security remediation H-04).
+    res.status(201).json({ invoiceId, total, feeAmount, contactId, payment_token: paymentToken });
   } catch (err) { next(err); }
 });
 
@@ -210,15 +224,35 @@ router.post('/public/checkout', async (req, res, next) => {
 // invoice shows a captured/authorized payment. Tags that payment as a gift.
 // Idempotent: calling twice for the same invoice returns the existing row
 // rather than erroring (donations.payment_id is UNIQUE).
-router.post('/public/finalize/:invoiceId', async (req, res, next) => {
+//
+// Proof of possession required (security remediation H-04) — this route is
+// unauthenticated by design (an anonymous donor has no session), but it was
+// previously reachable by anyone who could guess a sequential invoiceId,
+// letting a stranger harvest a receipt_token, reclassify someone else's
+// payment as a donation with an attacker-chosen fund/dedication/soft-credit,
+// and trigger a notification email. Now requires either:
+//   (a) the invoice's own payment_token in the body — the same capability
+//       every other public payment route already requires, proving the
+//       caller is the one who was handed this specific checkout, or
+//   (b) a staff session authorized to record donations (donations.write),
+//       which covers the admin "record a manual gift" flow.
+router.post('/public/finalize/:invoiceId', finalizeLimiter, tryAuth, async (req, res, next) => {
   try {
     const invoiceId = Number(req.params.invoiceId);
     const body = req.body || {};
 
     const [[invoice]] = await db.query(
-      'SELECT id, contact_id, organization_id FROM invoices WHERE id = :id', { id: invoiceId }
+      'SELECT id, contact_id, organization_id, payment_token FROM invoices WHERE id = :id', { id: invoiceId }
     );
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const isStaff = !!req.user
+      && (req.user.roles?.includes('admin') || req.user.permissions?.includes('donations.write'));
+    const suppliedToken = typeof body.payment_token === 'string' ? body.payment_token : '';
+    const hasToken = !!suppliedToken && !!invoice.payment_token && suppliedToken === invoice.payment_token;
+    if (!isStaff && !hasToken) {
+      return res.status(403).json({ error: 'Missing or invalid proof of possession for this invoice.' });
+    }
 
     const [[payment]] = await db.query(
       `SELECT id, amount, receipt_token FROM payments
@@ -239,15 +273,26 @@ router.post('/public/finalize/:invoiceId', async (req, res, next) => {
     let fundName = null;
     if (body.fund_id) {
       const [[f]] = await db.query('SELECT id, name FROM funds WHERE id = :id', { id: Number(body.fund_id) });
-      fundId = f?.id || null;
-      fundName = f?.name || null;
+      if (!f) return res.status(400).json({ error: 'Unknown fund_id' });
+      fundId = f.id;
+      fundName = f.name;
     } else {
       const fundSlug = String(body.fund_slug || '').trim();
       if (fundSlug) {
         const [[f]] = await db.query('SELECT id, name FROM funds WHERE slug = :slug', { slug: fundSlug });
-        fundId = f?.id || null;
-        fundName = f?.name || null;
+        if (!f) return res.status(400).json({ error: 'Unknown fund_slug' });
+        fundId = f.id;
+        fundName = f.name;
       }
+    }
+
+    let softCreditContactId = null;
+    if (body.soft_credit_contact_id) {
+      const [[sc]] = await db.query(
+        'SELECT id FROM contacts WHERE id = :id', { id: Number(body.soft_credit_contact_id) }
+      );
+      if (!sc) return res.status(400).json({ error: 'Unknown soft_credit_contact_id' });
+      softCreditContactId = sc.id;
     }
 
     const source = body.source === 'sms' ? 'sms' : 'form';
@@ -261,7 +306,7 @@ router.post('/public/finalize/:invoiceId', async (req, res, next) => {
       {
         contact_id: invoice.contact_id, organization_id: invoice.organization_id, fund_id: fundId,
         payment_id: payment.id, invoice_id: invoiceId, source,
-        soft_credit_contact_id: body.soft_credit_contact_id || null,
+        soft_credit_contact_id: softCreditContactId,
         dedication_note: body.dedication_note || null,
         is_anonymous: body.is_anonymous ? 1 : 0,
       }

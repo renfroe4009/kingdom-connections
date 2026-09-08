@@ -61,4 +61,26 @@ The original audit recommends commissioning an external pen test scoped to autho
 
 ---
 
-*Last updated: end of Phase 0, this session.*
+## 5. Confirm `TRUST_PROXY_HOPS` matches the real deployed topology (Phase 1, H-06)
+
+`server/src/index.js` now calls `app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1))` — defaults to 1 (Railway's own edge proxy). If a CDN or WAF (Cloudflare, etc.) sits in front of Railway, this needs to be 2, or `req.ip` and every IP-keyed rate limiter will read the wrong address. Set `TRUST_PROXY_HOPS` explicitly in the server's Railway environment variables once you've confirmed the real hop count — don't leave it to the default if you're not sure.
+
+---
+
+## 6. Decide whether/how to enforce the CSP (Phase 1, H-13)
+
+`vercel.json` currently ships `Content-Security-Policy-Report-Only` (logs violations, blocks nothing) — safe to deploy as-is. Flipping it to an enforcing `Content-Security-Policy` will break two real, first-party things until resolved:
+
+- **The site's default cookie-consent script** (`Website → Header/Footer → Custom JS`, `site_custom_js`, currently populated with the theme's default behavior) — injected as inline `<script>` text, which a strict `script-src` blocks outright.
+- **Per-page JSON-LD SEO schema markup** — also an inline `<script>`, built fresh per page (title/URL), so it can't be pinned with a fixed hash the way a static script can.
+
+You confirmed keeping `script-src` strict (no `'unsafe-inline'`) rather than accommodating these — the right call for actually stopping an XSS payload's own inline script (the C-05 threat), but it means enforcement needs one more decision before it ships:
+- **Option A**: move `site_custom_js`'s content to a static external file (`<script src="...">`, covered by `'self'`) — a concrete, doable fix, but changes how the admin "custom JS" builder feature works for anyone who's customized it beyond the default.
+- **Option B**: a nonce-based CSP — requires moving this app's header delivery from static Vercel `headers` config to a per-request mechanism (Vercel Edge Middleware or SSR) so a fresh nonce can be issued and matched into both the header and the inline `<script>` tags on each response. A real project, not a quick follow-up.
+- **Option C**: accept `'unsafe-inline'` specifically for `script-src`, keeping the rest of the CSP (style/font/img/frame/object lockdowns) — trades away the CSP's specific value against C-05-style attacks, keeps everything else working with zero further changes.
+
+No urgency — Report-Only ships real value today (visibility into what would break) with zero risk. This just needs a decision before anyone flips the switch.
+
+---
+
+*Last updated: end of Phase 1, this session (C-02's full fix still pending).*

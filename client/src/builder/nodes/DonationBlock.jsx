@@ -77,7 +77,11 @@ export default function DonationBlock({
           invoiceId={checkout.invoiceId}
           chargeAmount={checkout.total}
           onSuccess={async () => {
-            try { await api.post(`/donations/public/finalize/${checkout.invoiceId}`, {}); } catch { /* the gift is recorded server-side either way */ }
+            try {
+              await api.post(`/donations/public/finalize/${checkout.invoiceId}`, {
+                payment_token: checkout.payment_token,
+              });
+            } catch { /* the gift is recorded server-side either way */ }
             setDone(true);
           }}
           onDeclined={() => setError('That payment was declined. Please try another card.')}

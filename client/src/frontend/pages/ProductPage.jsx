@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../../api/client.js';
 import PriceDisplay from '../components/PriceDisplay.jsx';
 import AddToCartButton from '../components/AddToCartButton.jsx';
+import { sanitizeHtml } from '../../utils/sanitizeHtml.js';
 
 // Relative /api/... image URLs are same-origin only in local dev (Vite
 // proxies /api) — a split Vercel/Railway deploy needs the API origin prefixed.
@@ -59,7 +60,7 @@ export default function ProductPage() {
           <h1 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-primary)', fontSize: 'var(--text-3xl)' }}>{product.name}</h1>
           <div style={{ margin: 'var(--space-3) 0' }}><PriceDisplay price={product.price} comparePrice={product.compare_price} size="1.5rem" /></div>
           {product.short_desc && <p style={{ color: 'var(--color-text-muted)' }}>{product.short_desc}</p>}
-          {product.description && <div style={{ color: 'var(--color-text-muted)', marginTop: 'var(--space-4)' }} dangerouslySetInnerHTML={{ __html: product.description }} />}
+          {product.description && <div style={{ color: 'var(--color-text-muted)', marginTop: 'var(--space-4)' }} dangerouslySetInnerHTML={{ __html: sanitizeHtml(product.description) }} />}
 
           <div style={{ marginTop: 'var(--space-6)', maxWidth: 320 }}>
             {outOfStock ? (

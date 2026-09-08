@@ -16,8 +16,14 @@ const router = require('express').Router();
 const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
+const { assertOwnerEntityInScope } = require('../services/scope');
 
 router.use(requireAuth);
+
+// Lists are scoped by created_by, not owner_id (security remediation H-03).
+function assertListInScope(user, listId) {
+  return assertOwnerEntityInScope(user, 'contact_lists', listId, 'created_by');
+}
 
 router.get('/', requirePermission('lists.read'), async (_req, res, next) => {
   try {
@@ -70,6 +76,7 @@ router.get('/:id', requirePermission('lists.read'), async (req, res, next) => {
       { id: req.params.id },
     );
     if (!list) return res.status(404).json({ error: 'List not found' });
+    await assertListInScope(req.user, req.params.id);
 
     const [members] = await db.query(
       `SELECT c.id, c.first_name, c.last_name, c.email, c.mobile, c.phone,
@@ -117,6 +124,7 @@ router.post('/', requirePermission('lists.write'), async (req, res, next) => {
 router.put('/:id', requirePermission('lists.write'), async (req, res, next) => {
   try {
     const d = saveSchema.parse(req.body);
+    await assertListInScope(req.user, req.params.id);
     await db.query(
       `UPDATE contact_lists SET
          name        = :name,
@@ -140,6 +148,7 @@ router.put('/:id', requirePermission('lists.write'), async (req, res, next) => {
 
 router.delete('/:id', requirePermission('lists.write'), async (req, res, next) => {
   try {
+    await assertListInScope(req.user, req.params.id);
     await db.query('DELETE FROM contact_lists WHERE id = :id', { id: req.params.id });
     res.json({ ok: true });
   } catch (err) { next(err); }
@@ -152,6 +161,7 @@ const memberSchema = z.object({
 router.post('/:id/members', requirePermission('lists.write'), async (req, res, next) => {
   try {
     const { contact_ids } = memberSchema.parse(req.body);
+    await assertListInScope(req.user, req.params.id);
     // Bulk insert with INSERT IGNORE so re-adding existing members is a no-op
     // (the UNIQUE on PK enforces dedupe at the DB level either way).
     const values = contact_ids.map((cid) => [Number(req.params.id), cid, req.user.id]);
@@ -173,6 +183,7 @@ const fromTagsSchema = z.object({
 router.post('/:id/members/from-tags', requirePermission('lists.write'), async (req, res, next) => {
   try {
     const d = fromTagsSchema.parse(req.body);
+    await assertListInScope(req.user, req.params.id);
     const inList = d.tag_ids.join(','); // numeric — safe to inline
     const sql = d.match === 'all'
       ? `SELECT contact_id FROM contact_tags
@@ -194,6 +205,7 @@ router.post('/:id/members/from-tags', requirePermission('lists.write'), async (r
 
 router.post('/:id/members/from-org/:orgId', requirePermission('lists.write'), async (req, res, next) => {
   try {
+    await assertListInScope(req.user, req.params.id);
     // Pull every contact in the org and add them in one shot. We don't reuse
     // the regular /members route because that path requires the caller to know
     // the contact ids — and "add everyone in this org" is the common wish.
@@ -213,6 +225,7 @@ router.post('/:id/members/from-org/:orgId', requirePermission('lists.write'), as
 
 router.delete('/:id/members/:contactId', requirePermission('lists.write'), async (req, res, next) => {
   try {
+    await assertListInScope(req.user, req.params.id);
     await db.query(
       'DELETE FROM contact_list_members WHERE list_id = :id AND contact_id = :cid',
       { id: req.params.id, cid: req.params.contactId },
@@ -223,6 +236,7 @@ router.delete('/:id/members/:contactId', requirePermission('lists.write'), async
 
 router.get('/:id/resolve', requirePermission('lists.read'), async (req, res, next) => {
   try {
+    await assertListInScope(req.user, req.params.id);
     const [rows] = await db.query(
       `SELECT c.id, c.email, c.mobile, c.phone,
               c.first_name, c.last_name,

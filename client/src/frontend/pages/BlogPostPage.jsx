@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../../api/client.js';
 import usePageMeta from '../../hooks/usePageMeta.js';
+import { sanitizeHtml } from '../../utils/sanitizeHtml.js';
 
 const SPA_NAVY = '#0d1b2a';
 
@@ -128,7 +129,7 @@ export default function BlogPostPage() {
                 <div
                   className="blog-body"
                   style={{ lineHeight: 1.8, fontSize: '1.05rem', color: '#333' }}
-                  dangerouslySetInnerHTML={{ __html: processBodyHtml(post.body_html) }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(processBodyHtml(post.body_html)) }}
                 />
               ) : (
                 <p className="text-muted fst-italic">No content yet.</p>

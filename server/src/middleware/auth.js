@@ -24,55 +24,96 @@ function signToken(user, extra = {}) {
   );
 }
 
+// Verifies a bearer token and loads the full user (roles + permissions).
+// Returns { user: null, reason } for any missing/invalid/expired token or
+// inactive user — throws only on a genuine unexpected error (e.g. DB
+// failure). Shared by requireAuth (which turns a null user into the exact
+// same 401 messages as before this refactor) and tryAuth (which lets the
+// caller decide what an absent session means, for routes with more than
+// one valid way to prove you're allowed to act — see donations.js's
+// public finalize route for why that's needed).
+async function loadUserFromRequest(req) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return { user: null, reason: 'missing_token' };
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    if (err?.name === 'JsonWebTokenError' || err?.name === 'TokenExpiredError') {
+      return { user: null, reason: 'invalid_token' };
+    }
+    throw err;
+  }
+
+  // Determine which user ID to load: impersonated agent or actual caller
+  const loadId = decoded.impersonating_as || decoded.sub;
+
+  const [rows] = await db.query(
+    `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.contact_id, u.default_dashboard
+       FROM users u WHERE u.id = :id`,
+    { id: loadId }
+  );
+  const user = rows[0];
+  if (!user || !user.is_active) return { user: null, reason: 'invalid_user' };
+
+  // When impersonating, expose the real caller's ID for audit trails
+  if (decoded.impersonating_as) {
+    user.impersonated_by = decoded.sub;
+  }
+
+  // Load permissions
+  const [permRows] = await db.query(
+    `SELECT DISTINCT p.\`key\`
+       FROM permissions p
+       JOIN role_permissions rp ON rp.permission_id = p.id
+       JOIN user_roles ur       ON ur.role_id = rp.role_id
+      WHERE ur.user_id = :id`,
+    { id: user.id }
+  );
+  user.permissions = permRows.map((r) => r.key);
+
+  const [roleRows] = await db.query(
+    `SELECT r.name FROM roles r
+       JOIN user_roles ur ON ur.role_id = r.id
+      WHERE ur.user_id = :id`,
+    { id: user.id }
+  );
+  user.roles = roleRows.map((r) => r.name);
+
+  return { user, reason: null };
+}
+
+const REASON_MESSAGES = {
+  missing_token: 'Missing token',
+  invalid_token: 'Invalid token',
+  invalid_user:  'Invalid user',
+};
+
 async function requireAuth(req, res, next) {
   try {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'Missing token' });
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    // Determine which user ID to load: impersonated agent or actual caller
-    const loadId = decoded.impersonating_as || decoded.sub;
-
-    const [rows] = await db.query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, u.is_active, u.contact_id, u.default_dashboard
-         FROM users u WHERE u.id = :id`,
-      { id: loadId }
-    );
-    const user = rows[0];
-    if (!user || !user.is_active) return res.status(401).json({ error: 'Invalid user' });
-
-    // When impersonating, expose the real caller's ID for audit trails
-    if (decoded.impersonating_as) {
-      user.impersonated_by = decoded.sub;
-    }
-
-    // Load permissions
-    const [permRows] = await db.query(
-      `SELECT DISTINCT p.\`key\`
-         FROM permissions p
-         JOIN role_permissions rp ON rp.permission_id = p.id
-         JOIN user_roles ur       ON ur.role_id = rp.role_id
-        WHERE ur.user_id = :id`,
-      { id: user.id }
-    );
-    user.permissions = permRows.map((r) => r.key);
-
-    const [roleRows] = await db.query(
-      `SELECT r.name FROM roles r
-         JOIN user_roles ur ON ur.role_id = r.id
-        WHERE ur.user_id = :id`,
-      { id: user.id }
-    );
-    user.roles = roleRows.map((r) => r.name);
-
+    const { user, reason } = await loadUserFromRequest(req);
+    if (!user) return res.status(401).json({ error: REASON_MESSAGES[reason] });
     req.user = user;
     next();
   } catch (err) {
-    if (err?.name === 'JsonWebTokenError' || err?.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
+    next(err);
+  }
+}
+
+// Optional-auth variant for routes that accept more than one form of proof
+// (e.g. a public endpoint that's fine either with a staff session that
+// holds a specific permission, or with a possession-proving token in the
+// body). Sets req.user when a valid session is present; otherwise leaves
+// it undefined and calls next() regardless — never rejects the request
+// itself. The route is responsible for deciding what "no session" means.
+async function tryAuth(req, _res, next) {
+  try {
+    const { user } = await loadUserFromRequest(req);
+    if (user) req.user = user;
+    next();
+  } catch (err) {
     next(err);
   }
 }
@@ -88,4 +129,4 @@ function requirePermission(...needed) {
   };
 }
 
-module.exports = { signToken, requireAuth, requirePermission };
+module.exports = { signToken, requireAuth, tryAuth, requirePermission };

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useNode } from '@craftjs/core';
 import { FieldGroup, RepeaterField, TextField, TextareaField, ToggleField } from '../fields/index.jsx';
 import { IDENTITY_DEFAULTS, cx, useDomIdentity, useIsEditing, useNodeRef } from './nodeUtils.js';
+import { sanitizeHtml } from '../../utils/sanitizeHtml.js';
 
 export default function Accordion({ items, allowMultiple, openFirst }) {
   const ref = useNodeRef();
@@ -36,7 +37,7 @@ export default function Accordion({ items, allowMultiple, openFirst }) {
             <i className={`fa-solid fa-chevron-${isOpen(index) ? 'up' : 'down'}`} />
           </button>
           {isOpen(index) && (
-            <div className="bx-accordion__body bx-text" dangerouslySetInnerHTML={{ __html: item.answer || '' }} />
+            <div className="bx-accordion__body bx-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.answer || '') }} />
           )}
         </div>
       ))}

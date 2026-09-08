@@ -6,12 +6,25 @@ const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { logActivity } = require('../services/activity');
+const { assertOwnerEntityInScope } = require('../services/scope');
 
 router.use(requireAuth);
 
-router.get('/', async (req, res, next) => {
+const ENTITY_TYPES = ['contact', 'organization', 'deal'];
+// All three tables use the same owner_id column.
+const ENTITY_TABLE = { contact: 'contacts', organization: 'organizations', deal: 'deals' };
+
+router.get('/', requirePermission('notes.read'), async (req, res, next) => {
   try {
-    const { entity_type, entity_id } = req.query;
+    const entity_type = req.query.entity_type;
+    const entity_id = Number(req.query.entity_id);
+    if (!ENTITY_TYPES.includes(entity_type) || !Number.isInteger(entity_id)) {
+      return res.status(400).json({ error: 'Invalid entity_type or entity_id' });
+    }
+    // Row-level scope check (security remediation H-02) — a note's own row
+    // has no owner of its own, so what matters is whether the caller can
+    // see the entity the note is attached to.
+    await assertOwnerEntityInScope(req.user, ENTITY_TABLE[entity_type], entity_id);
     const [rows] = await db.query(
       `SELECT n.*, CONCAT_WS(' ', u.first_name, u.last_name) AS user_name
          FROM notes n LEFT JOIN users u ON u.id = n.user_id
@@ -19,7 +32,10 @@ router.get('/', async (req, res, next) => {
         ORDER BY n.created_at DESC`,
       { et: entity_type, eid: entity_id });
     res.json(rows);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
 const saveSchema = z.object({

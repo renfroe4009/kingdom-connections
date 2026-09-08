@@ -3,9 +3,11 @@
 // regardless of NODE_ENV. 4xx responses (Zod validation, intentional
 // "Forbidden"/"Not found" errors) must keep their existing shape.
 //
-// Trigger: GET /api/payments/public/invoice/abc — Number('abc') is NaN,
+// Trigger: GET /api/payments/public/status/abc — Number('abc') is NaN,
 // which mysql2 rejects as an invalid bound value ("Unknown column 'NaN' in
 // 'where clause'"), producing a genuine uncaught DB exception — not a mock.
+// (The original trigger route, /public/invoice/:id, was retired by the
+// C-04 fix; this route hits the identical NaN-binding failure mode.)
 //
 // Run:  node server/tests/security/M-01.error-handler-leak.test.js
 // =============================================================================
@@ -57,7 +59,7 @@ async function check(name, fn) {
   console.log('== M-01 error handler leak ==');
 
   await check('a genuine 500 leaks no err.message, no stack, no SQL/column names', async () => {
-    const r = await get('/api/payments/public/invoice/abc');
+    const r = await get('/api/payments/public/status/abc');
     if (r.status !== 500) throw new Error(`expected 500 got ${r.status} (route behavior changed?)`);
     const json = JSON.parse(r.body);
     if (json.error !== 'Internal server error') throw new Error(`expected generic error, got: ${json.error}`);

@@ -97,6 +97,20 @@ const { seed: seedKnowledgeBase } = require('./services/kbSeeder');
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Trust exactly one proxy hop (security remediation H-06) — this app is
+// deployed behind Railway's own edge proxy. Without this, req.ip resolves
+// to the proxy's address for every client, which:
+//   - collapses the forgot-password/portal-register rate limiters (keyed on
+//     IP alone) into one shared global bucket instead of per-client ones;
+//   - makes every place that reads x-forwarded-for manually (payments.js,
+//     forms.js — now switched to req.ip) trust an attacker-controllable
+//     header instead of Express's own validated chain.
+// A specific hop count, never `true` (which lets a client spoof
+// x-forwarded-for freely by claiming to be behind more proxies than it is).
+// HUMAN ACTION: verify this matches the real deployed topology — if a CDN/
+// WAF sits in front of Railway's own edge, this needs to be 2, not 1.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
+
 app.use(helmet({
   // Use 'cross-origin' (explicit header present) rather than false (header
   // absent) — the difference matters for COEP-enforcing contexts.  'cross-origin'

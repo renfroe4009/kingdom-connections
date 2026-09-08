@@ -4,6 +4,7 @@
 // =============================================================================
 const Anthropic = require('@anthropic-ai/sdk');
 const { db }    = require('../db');
+const { sanitizeHtml } = require('./sanitizeHtml');
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS    = 2048;
@@ -362,14 +363,35 @@ async function uniqueSlug(base, table) {
   return n === 0 ? safe : `${safe}-${n + 1}`;
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Security remediation C-05: the AI's content input is untrusted the same
+// way any user input is — a KB article or contact note could steer the
+// model into emitting a payload here via prompt injection, and this output
+// is stored verbatim in blog_posts.body_html, then rendered on the public
+// site via dangerouslySetInnerHTML. Escape FIRST, then apply the markdown
+// transforms on top of the escaped text — so a literal `<script>` in the
+// model's output becomes inert text, not a tag, while **bold**/headings
+// still work exactly as before. DOMPurify below is defense in depth on top
+// of this, not a substitute for it.
 function markdownToHtml(text) {
-  return (text || '').split(/\n{2,}/).filter((p) => p.trim()).map((p) => {
-    const t = p.trim();
+  const html = (text || '').split(/\n{2,}/).filter((p) => p.trim()).map((p) => {
+    const t = escapeHtml(p.trim());
     if (t.startsWith('### ')) return `<h3>${t.slice(4)}</h3>`;
     if (t.startsWith('## '))  return `<h2>${t.slice(3)}</h2>`;
     if (t.startsWith('# '))   return `<h1>${t.slice(2)}</h1>`;
     return `<p>${t.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}</p>`;
   }).join('\n');
+  // Defense in depth on top of the escaping above — sanitize the final
+  // markup through the same shared sanitizer cms.js's human editor uses.
+  return sanitizeHtml(html);
 }
 
 // Deals require a pipeline_id + stage_id (NOT NULL, no default). Pick the
@@ -849,4 +871,6 @@ async function streamChat(res, messages, module, appName, userId = null) {
   res.end();
 }
 
-module.exports = { streamChat, loadKnowledge, getSettings, isAvailable, MASKED };
+// markdownToHtml is exported for direct testing (security remediation C-05
+// regression test) — it has no other external caller.
+module.exports = { streamChat, loadKnowledge, getSettings, isAvailable, MASKED, markdownToHtml };

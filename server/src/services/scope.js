@@ -112,4 +112,34 @@ function taskClause(scopeIds) {
   return `(assigned_to IN (${ids}) OR created_by IN (${ids}))`;
 }
 
-module.exports = { resolveOwnerScope, ownerClause, contactOwnerClause, taskClause };
+/**
+ * Row-level scope check for routes that operate on a *child* record (a
+ * note, an attachment, a household, a saved list) by loading its *parent*
+ * entity and confirming the caller's scope actually covers it — mirrors the
+ * pattern already correct at contacts.js's GET /:id (security remediation
+ * H-02/H-03). Throws a { status, message } error rather than returning a
+ * boolean, so route handlers can just `await` it inside their existing
+ * try/catch and forward err.status straight to res.status().
+ *
+ * @param {object} user - req.user
+ * @param {string} table - parent table name (must be a hardcoded string
+ *   from the caller, e.g. via a fixed entity_type -> table map — never
+ *   pass request-derived input directly, this does no escaping)
+ * @param {number} entityId
+ * @param {string} [ownerColumn] - defaults to 'owner_id'
+ */
+async function assertOwnerEntityInScope(user, table, entityId, ownerColumn = 'owner_id') {
+  const [[row]] = await db.query(
+    `SELECT ${ownerColumn} AS owner_id FROM ${table} WHERE id = :id`,
+    { id: entityId }
+  );
+  if (!row) throw Object.assign(new Error('Not found'), { status: 404 });
+  const scopeIds = await resolveOwnerScope(user);
+  if (scopeIds !== null && !scopeIds.includes(row.owner_id)) {
+    throw Object.assign(new Error('Forbidden'), { status: 403 });
+  }
+}
+
+module.exports = {
+  resolveOwnerScope, ownerClause, contactOwnerClause, taskClause, assertOwnerEntityInScope,
+};

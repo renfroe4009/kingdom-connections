@@ -1,11 +1,13 @@
 // =============================================================================
-// C-04 — GET /api/payments/public/invoice/:id must never leak receipt_token
+// C-04 — GET /api/payments/public/invoice/:id
 //
-// receipt_token is a capability that unlocks the full receipt payload (PII +
-// card last4) at /public/receipt/by-token/:token. This route is unauthenticated
-// with a sequential integer id, so any receipt_token in its response can be
-// harvested by enumeration — verified live against this server: id=INVOICE_ID
-// below has a real captured payment with a real receipt_token.
+// Phase 0: stripped receipt_token from this route's response (first fix).
+// Phase 1: retired the route entirely — unauthenticated, sequential id, no
+// proof of possession, and still leaked invoice financial detail (total,
+// balance, memo, org name) even after the Phase 0 fix. Confirmed via the
+// mirrored production data that every invoice already has a payment_token,
+// so no live pre-token pay-link depends on this route — real receipts now
+// require /by-token/:token, which needs the token itself.
 //
 // Run:  node server/tests/security/C-04.invoice-token-leak.test.js
 // =============================================================================
@@ -37,27 +39,26 @@ async function check(name, fn) {
 }
 
 (async () => {
-  console.log('== C-04 invoice receipt_token leak ==');
+  console.log('== C-04 legacy invoice route retired ==');
 
-  await check(`GET /public/invoice/${INVOICE_ID} response has no receipt_token`, async () => {
+  await check(`GET /public/invoice/${INVOICE_ID} is retired, leaks nothing to an unauthenticated caller`, async () => {
     const r = await get(`/api/payments/public/invoice/${INVOICE_ID}`);
-    if (r.status !== 200) throw new Error(`expected 200 got ${r.status} (adjust TEST_INVOICE_ID?)`);
-    const json = JSON.parse(r.body);
-    if (json.latest_payment && Object.prototype.hasOwnProperty.call(json.latest_payment, 'receipt_token')) {
-      throw new Error('latest_payment.receipt_token is present in the response');
+    // No route matches this path anymore, so it falls through to this
+    // router's own requireAuth gate (401) rather than a plain 404 — an
+    // equally valid "retired" outcome, and stricter (no data reachable at
+    // all without a session, vs. a 404 that could still hint at valid ids).
+    if (![401, 404].includes(r.status)) throw new Error(`expected 401 or 404, got ${r.status}: ${r.body}`);
+    if (/receipt_token|balance_due|organization_name/.test(r.body)) {
+      throw new Error('response body still contains invoice/financial data');
     }
-    if (/receipt_token/.test(r.body)) throw new Error('the string "receipt_token" appears anywhere in the response');
   });
 
-  await check('response still includes non-sensitive invoice fields (no regression)', async () => {
-    const r = await get(`/api/payments/public/invoice/${INVOICE_ID}`);
-    const json = JSON.parse(r.body);
-    if (!json.invoice || typeof json.invoice.total === 'undefined') {
-      throw new Error('expected invoice.total to still be present');
-    }
-    if (!json.latest_payment || typeof json.latest_payment.amount === 'undefined') {
-      throw new Error('expected latest_payment.amount to still be present');
-    }
+  await check('the token-based receipt route is unaffected (no regression)', async () => {
+    const r = await get('/api/payments/public/invoice/by-token/not-a-real-token');
+    // The sibling route is a distinct handler untouched by this change — a
+    // malformed token correctly 400s from its own format check. What matters
+    // here is that it's a controlled 4xx, not a 500 or a leak.
+    if (r.status < 400 || r.status >= 500) throw new Error(`expected a 4xx, got ${r.status}: ${r.body}`);
   });
 
   console.log(`\n${pass}/${pass + fail} passed`);

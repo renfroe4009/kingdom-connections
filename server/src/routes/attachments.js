@@ -12,6 +12,7 @@ const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const storage = require('../services/storage');
 const { logActivity } = require('../services/activity');
+const { assertOwnerEntityInScope } = require('../services/scope');
 
 router.use(requireAuth);
 
@@ -21,6 +22,12 @@ const upload = multer({
 });
 
 const VALID_ENTITIES = new Set(['contact', 'organization', 'deal', 'volunteer_compliance_item']);
+// Parent table for each entity type that HAS an owner_id to scope by.
+// volunteer_compliance_item is deliberately absent — that table has no
+// owner_id column (compliance tracking isn't per-sales-rep scoped), so
+// those attachments are visible to anyone holding the coarse read
+// permission, unchanged from before this fix.
+const ENTITY_TABLE = { contact: 'contacts', organization: 'organizations', deal: 'deals' };
 
 // A per-entity permission map keeps this consistent with the rest of the API
 const ENTITY_WRITE_PERM = {
@@ -47,9 +54,13 @@ function permFor(user, key) {
 // List
 router.get('/', async (req, res, next) => {
   try {
-    const { entity_type, entity_id } = req.query;
+    const { entity_type } = req.query;
+    const entity_id = Number(req.query.entity_id);
     ensureEntity(entity_type);
     if (!permFor(req.user, ENTITY_READ_PERM[entity_type])) return res.status(403).json({ error: 'Forbidden' });
+    if (ENTITY_TABLE[entity_type]) {
+      await assertOwnerEntityInScope(req.user, ENTITY_TABLE[entity_type], entity_id);
+    }
 
     const [rows] = await db.query(
       `SELECT a.id, a.entity_type, a.entity_id, a.file_name, a.content_type,
@@ -121,6 +132,14 @@ router.get('/:id/download', async (req, res, next) => {
     const a = rows[0];
     if (!a) return res.status(404).json({ error: 'Not found' });
     if (!permFor(req.user, ENTITY_READ_PERM[a.entity_type])) return res.status(403).json({ error: 'Forbidden' });
+    // Row-level scope check (security remediation H-03) — the permission
+    // check above is coarse (does the caller hold contacts.read at all?);
+    // this confirms the specific parent entity is actually in their scope,
+    // so a scoped sales agent can't enumerate :id to reach someone else's
+    // contact's attachments.
+    if (ENTITY_TABLE[a.entity_type]) {
+      await assertOwnerEntityInScope(req.user, ENTITY_TABLE[a.entity_type], a.entity_id);
+    }
 
     const got = await storage.getReadable({ driver: a.storage_driver, key: a.storage_key, filename: a.file_name });
     if (got.type === 'redirect') return res.redirect(got.url);
@@ -142,6 +161,9 @@ router.delete('/:id', async (req, res, next) => {
     const a = rows[0];
     if (!a) return res.status(404).json({ error: 'Not found' });
     if (!permFor(req.user, ENTITY_WRITE_PERM[a.entity_type])) return res.status(403).json({ error: 'Forbidden' });
+    if (ENTITY_TABLE[a.entity_type]) {
+      await assertOwnerEntityInScope(req.user, ENTITY_TABLE[a.entity_type], a.entity_id);
+    }
 
     await storage.remove({ driver: a.storage_driver, key: a.storage_key });
     await db.query('DELETE FROM attachments WHERE id = :id', { id: a.id });

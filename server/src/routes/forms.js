@@ -117,10 +117,7 @@ router.post('/public/:slug/submit', async (req, res, next) => {
     delete body.__hp;
 
     const data_json = JSON.stringify(body);
-    const ip_address = (
-      req.headers['x-forwarded-for']?.split(',')[0].trim() ||
-      req.socket?.remoteAddress || null
-    );
+    const ip_address = req.ip || null; // security remediation H-06
 
     await db.query(
       `INSERT INTO form_submissions (form_id, data_json, ip_address, user_agent)

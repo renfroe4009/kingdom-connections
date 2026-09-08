@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNode } from '@craftjs/core';
 import { FieldGroup, RepeaterField, TextField, TextareaField } from '../fields/index.jsx';
 import { IDENTITY_DEFAULTS, cx, useDomIdentity, useNodeRef } from './nodeUtils.js';
+import { sanitizeHtml } from '../../utils/sanitizeHtml.js';
 
 export default function Tabs({ items }) {
   const ref = useNodeRef();
@@ -27,7 +28,7 @@ export default function Tabs({ items }) {
         ))}
       </div>
       {current ? (
-        <div className="bx-tabs__panel bx-text" role="tabpanel" dangerouslySetInnerHTML={{ __html: current.content || '' }} />
+        <div className="bx-tabs__panel bx-text" role="tabpanel" dangerouslySetInnerHTML={{ __html: sanitizeHtml(current.content || '') }} />
       ) : (
         <div className="bx-editor-note">Add tabs in the settings panel</div>
       )}

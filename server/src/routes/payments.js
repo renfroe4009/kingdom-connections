@@ -122,43 +122,13 @@ router.get('/public/invoice/by-token/:token', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Legacy: public invoice view by integer id.
-// PII (contact name, email) is intentionally OMITTED from this response — use
-// /by-token/:token for the full payload.  Kept for backward compatibility with
-// invoice pay-links sent before the token scheme was added.
-router.get('/public/invoice/:id', async (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    const [[invoice]] = await db.query(
-      `SELECT i.id, i.invoice_number, i.issue_date, i.due_date, i.currency,
-              i.subtotal, i.tax_rate, i.tax_amount, i.discount_amount,
-              i.total, i.amount_paid, i.balance_due, i.status, i.memo,
-              o.name AS organization_name
-         FROM invoices i
-         LEFT JOIN organizations o ON o.id = i.organization_id
-        WHERE i.id = :id`,
-      { id });
-    if (!invoice) return res.status(404).json({ error: 'Not found' });
-    const [lines] = await db.query(
-      'SELECT id, description, quantity, unit_price, amount FROM invoice_line_items WHERE invoice_id = :id ORDER BY sort_order, id',
-      { id });
-    // receipt_token is deliberately NOT selected here (C-01 fix, 2026 security
-    // remediation) — this route has no proof the caller owns the invoice
-    // (unauthenticated, sequential id), and the token is a capability that
-    // unlocks the full receipt payload (PII + card last4) elsewhere. Callers
-    // who need the receipt must already hold the token via /by-token/:token.
-    const [[latestPayment]] = await db.query(
-      `SELECT id, amount, status, received_at, created_at
-         FROM payments
-        WHERE invoice_id = :id
-          AND status IS NOT NULL
-          AND LOWER(status) NOT IN ('failed','voided','refunded','cancelled')
-        ORDER BY id DESC LIMIT 1`, { id });
-    await db.query(
-      `UPDATE invoices SET viewed_at = COALESCE(viewed_at, NOW()) WHERE id = :id`, { id });
-    res.json({ invoice, line_items: lines, latest_payment: latestPayment || null });
-  } catch (err) { next(err); }
-});
+// The legacy public-invoice-by-integer-id route (security remediation C-04)
+// was retired here: unauthenticated, sequential id, no proof the caller
+// owned the invoice, and it leaked a receipt_token capability plus invoice
+// financial detail to anyone who could count. Confirmed via the mirrored
+// production data that every invoice already carries a payment_token, so no
+// live pre-token pay-link depends on this route — use /by-token/:token,
+// which requires actually holding the token.
 
 // Public Passage.js client-token — no auth required, used by the pay page.
 // Only works for Valor; returns the same clientToken + epi as the auth'd vault route.
@@ -283,9 +253,9 @@ router.post('/public/checkout/:invoiceId', async (req, res, next) => {
     // Record a pending payment so the webhook/return has something to attach
     // to. Snapshot the gateway mode, fee, and customer IP up front — we have
     // them now even if the gateway response is sparse later.
-    const customerIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-                      || req.socket?.remoteAddress
-                      || null;
+    // req.ip (security remediation H-06) — respects the configured trust
+    // proxy hop count rather than trusting a raw, spoofable header.
+    const customerIp = req.ip || null;
     // 256-bit random token used as the PUBLIC receipt URL for this payment.
     // Generated up-front so even an abandoned/pending payment has a stable
     // unguessable identifier — never expose `payments.id` in customer-facing
@@ -511,8 +481,7 @@ router.post('/public/charge/:invoiceId', publicPaymentLimiter, express.json(), a
       ? Number(inv.balance_due)
       : Number(inv.balance_due) + (fee?.amount || 0);
     const receiptToken = crypto.randomBytes(32).toString('hex');
-    const customerIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-                    || req.socket?.remoteAddress || null;
+    const customerIp = req.ip || null; // security remediation H-06
 
     // Insert pending payment row.
     const [ins] = await db.query(
@@ -673,7 +642,7 @@ router.post('/public/ach-charge/:invoiceId', publicPaymentLimiter, express.urlen
 
     const chargeAmount = Number(inv.balance_due);
     const receiptToken = crypto.randomBytes(32).toString('hex');
-    const customerIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
+    const customerIp = req.ip || null; // security remediation H-06
 
     const [ins] = await db.query(
       `INSERT INTO payments
@@ -1152,8 +1121,7 @@ router.post('/public/confirm/:invoiceId', publicPaymentLimiter, express.json(), 
     // Customer IP: trust an explicit body value first (the iframe return URL
     // may pass through what the gateway saw); otherwise infer from the request.
     const cip     = req.body?.customerIp || req.body?.customer_ip
-                    || (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-                    || req.socket?.remoteAddress
+                    || req.ip // security remediation H-06
                     || null;
     // Optional billing snapshot — accept either a pre-built JSON string or an
     // object we can stringify. Stored in payments.billing_address (JSON column).

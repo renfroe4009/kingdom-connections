@@ -458,7 +458,9 @@ router.post('/donations/checkout', async (req, res, next) => {
       );
     }
 
-    res.status(201).json({ invoiceId, total, feeAmount, contactId: scope.contact_id });
+    // payment_token proves to /public/finalize below that the caller is the
+    // one this checkout was actually handed to (security remediation H-04).
+    res.status(201).json({ invoiceId, total, feeAmount, contactId: scope.contact_id, payment_token: paymentToken });
   } catch (err) { next(err); }
 });
 
