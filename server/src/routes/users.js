@@ -2,12 +2,12 @@
 // /api/users
 // =============================================================================
 const router = require('express').Router();
-const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth, requirePermission, signToken } = require('../middleware/auth');
 const { resolveOwnerScope } = require('../services/scope');
 const { logActivity } = require('../services/activity');
+const { passwordSchema, hashPassword, isPasswordBreached } = require('../services/passwordPolicy');
 
 router.use(requireAuth);
 
@@ -129,12 +129,12 @@ router.get('/me/reports', async (req, res, next) => {
 
 const createSchema = z.object({
   email: z.string().email(),
-  password: z.string()
-    .min(12, 'Password must be at least 12 characters')
-    .max(128, 'Password must be at most 128 characters')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
+  // Security remediation M-04 — shared passwordSchema (length only, no
+  // composition rules — see services/passwordPolicy.js for the NIST
+  // 800-63B rationale). This used to require specific character classes,
+  // which the other 5 password-set sites in the app didn't; now every one
+  // shares the exact same rule.
+  password: passwordSchema,
   first_name: z.string().optional(),
   last_name: z.string().optional(),
   phone: z.string().optional(),
@@ -151,7 +151,11 @@ router.post('/', requirePermission('users.manage'), async (req, res, next) => {
       data.manager_id = req.user.id;
     }
     await assertGrantableRoles(req.user, data.role_ids);
-    const password_hash = await bcrypt.hash(data.password, 10);
+    const breach = await isPasswordBreached(data.password);
+    if (breach.breached) {
+      return res.status(400).json({ error: 'This password has appeared in a known data breach. Please choose a different one.' });
+    }
+    const password_hash = await hashPassword(data.password);
     const [ins] = await db.query(
       `INSERT INTO users (email, password_hash, first_name, last_name, phone, manager_id)
        VALUES (:email, :password_hash, :first_name, :last_name, :phone, :manager_id)`,
@@ -181,7 +185,7 @@ const updateSchema = z.object({
   last_name:     z.string().optional(),
   phone:         z.string().optional(),
   is_active:     z.boolean().optional(),
-  password:      z.string().min(6).optional(),
+  password:      passwordSchema.optional(),
   manager_id:    z.number().int().nullable().optional(),
   role_ids:      z.array(z.number().int()).optional(),
   cw_member_id:  z.string().optional().nullable(),
@@ -212,8 +216,12 @@ router.put('/:id', requirePermission('users.manage'), async (req, res, next) => 
       }
     }
     if (data.password) {
+      const breach = await isPasswordBreached(data.password);
+      if (breach.breached) {
+        return res.status(400).json({ error: 'This password has appeared in a known data breach. Please choose a different one.' });
+      }
       fields.push('password_hash = :password_hash');
-      params.password_hash = await bcrypt.hash(data.password, 10);
+      params.password_hash = await hashPassword(data.password);
       // Security remediation H-05 — an admin-initiated password change
       // must invalidate the target's existing sessions the same way a
       // self-service reset does, otherwise a compromised account stays

@@ -11,6 +11,15 @@ const { requireAuth, requirePermission } = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
 const { triggerWorkflow } = require('../services/automations');
 const { ensureConstituentTag } = require('../services/constituents');
+const { verifyTurnstile } = require('../services/captcha');
+
+// Security remediation M-03 — data_json = JSON.stringify(body) stored the
+// ENTIRE request body with no field allowlist or size cap, so a single
+// request could persist up to Express's global 10MB JSON limit. Per-field
+// cap keeps one runaway textarea from dominating a submission; the total
+// cap is a hard backstop even after allowlisting + per-field truncation.
+const MAX_FIELD_LENGTH = 5000;
+const MAX_TOTAL_PAYLOAD = 50000; // bytes, serialized
 
 const router = express.Router();
 
@@ -126,15 +135,39 @@ router.post('/public/:slug/submit', formSubmitLimiter, async (req, res, next) =>
     );
     if (!form) return res.status(404).json({ error: 'Form not found' });
 
-    const body = req.body || {};
+    const rawBody = req.body || {};
 
     // Honeypot spam check — bot-filled invisible field
-    if (form.honeypot && body.__hp) {
+    if (form.honeypot && rawBody.__hp) {
       return res.status(201).json({ ok: true }); // silently discard
     }
-    delete body.__hp;
 
-    const data_json = JSON.stringify(body);
+    // Security remediation M-03 — optional Turnstile verification (see
+    // services/captcha.js; a no-op when TURNSTILE_SECRET_KEY isn't set).
+    const captcha = await verifyTurnstile(rawBody.turnstile_token, req.ip);
+    if (!captcha.ok) return res.status(400).json({ error: 'Verification failed. Please try again.' });
+
+    // Security remediation M-03 — only persist fields this form actually
+    // declares (form_fields), each capped in length, rather than the raw
+    // request body verbatim. __hp/turnstile_token were never real form
+    // fields and are dropped along with everything else not on this list.
+    const [declaredFields] = await db.query(
+      'SELECT field_key FROM form_fields WHERE form_id = :form_id', { form_id: form.id }
+    );
+    const allowedKeys = new Set(declaredFields.map((f) => f.field_key));
+    const body = {};
+    for (const [key, value] of Object.entries(rawBody)) {
+      if (!allowedKeys.has(key)) continue;
+      if (value == null) continue;
+      body[key] = typeof value === 'string' ? value.slice(0, MAX_FIELD_LENGTH) : value;
+    }
+
+    let data_json = JSON.stringify(body);
+    if (Buffer.byteLength(data_json, 'utf8') > MAX_TOTAL_PAYLOAD) {
+      // Backstop only — per-field truncation above should already prevent
+      // this for any form with a sane number of declared fields.
+      return res.status(400).json({ error: 'Submission too large.' });
+    }
     const ip_address = req.ip || null; // security remediation H-06
 
     await db.query(
@@ -161,11 +194,27 @@ router.post('/public/:slug/submit', formSubmitLimiter, async (req, res, next) =>
             'SELECT id FROM contacts WHERE email = ? LIMIT 1', [contactData.email]
           );
           if (existing) {
-            const sets = Object.keys(contactData).map(k => `\`${k}\` = ?`).join(', ');
-            await db.query(
-              `UPDATE contacts SET ${sets}, updated_at = NOW() WHERE id = ?`,
-              [...Object.values(contactData), existing.id]
+            // Security remediation M-03 — this used to UPDATE every mapped
+            // column unconditionally, so an unauthenticated attacker who
+            // knew a donor's email could overwrite their real CRM record
+            // (name, phone, address) with whatever they submitted. Now
+            // only fills columns that are CURRENTLY EMPTY on the existing
+            // contact — a returning donor filling in a phone number they
+            // hadn't given before still works; overwriting a value that's
+            // already on file from an unauthenticated request does not.
+            const cols = Object.keys(contactData);
+            const [[current]] = await db.query(
+              `SELECT ${cols.map((c) => `\`${c}\``).join(', ')} FROM contacts WHERE id = ?`,
+              [existing.id]
             );
+            const fillable = cols.filter((c) => current[c] === null || current[c] === '');
+            if (fillable.length) {
+              const sets = fillable.map((k) => `\`${k}\` = ?`).join(', ');
+              await db.query(
+                `UPDATE contacts SET ${sets}, updated_at = NOW() WHERE id = ?`,
+                [...fillable.map((k) => contactData[k]), existing.id]
+              );
+            }
             contactId = existing.id;
           } else {
             const cols = Object.keys(contactData).map(k => `\`${k}\``).join(', ');

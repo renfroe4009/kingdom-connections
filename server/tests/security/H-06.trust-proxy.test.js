@@ -25,6 +25,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 const mysql = require('mysql2/promise');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:4220';
+const ORIGIN_HEADER = { Origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5220').split(',')[0].trim() };
 const SPOOFED_IP = '6.6.6.6';
 
 function postForm() {
@@ -33,7 +34,7 @@ function postForm() {
     const url = new URL(`${API_BASE}/api/forms/public/contact-form/submit`);
     const req = http.request(url, {
       method: 'POST',
-      headers: {
+      headers: { ...ORIGIN_HEADER,
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
         // Simulates attacker-injected + real-proxy-appended chain.

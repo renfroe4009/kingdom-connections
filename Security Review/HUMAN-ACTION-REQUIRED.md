@@ -137,6 +137,21 @@ Safe to re-run. Not `required:true`-gated like #9 above, so nothing fails outrig
 
 The original audit recommended 15–30 minutes, written when there was no revocation mechanism at all — a short lifetime was the *only* way to limit a stolen token's usefulness. That's no longer true: logout now revokes a token immediately, and a password reset (self-service or admin-initiated) invalidates every other live session for that account in real time. I left `JWT_EXPIRES_IN` at its existing 8h default rather than shortening it, since there's no refresh-token mechanism in this app to absorb the usability cost of frequent re-logins for staff using the CRM all day, and the specific threat the audit was targeting (a stolen token staying valid for hours with no way to kill it) is now closed by revocation instead. If you want a shorter default anyway (defense in depth against a token that's stolen but never detected/reported), it's a one-line env var change (`JWT_EXPIRES_IN=30m` in Railway, standard `ms`-style format) — no code change needed. Flagging as your call, not mine, since it's a product/usability tradeoff, not a pure security question at this point.
 
+## 12. Confirm no legitimate non-browser, non-webhook caller hits the API in production (Phase 4, M-06)
+
+CORS now requires a real, allowlisted `Origin` header on every route except webhook paths (`/webhook`) and `/api/health`. This is safe for the React SPA (browsers always send `Origin` on cross-origin requests) and for the 4 known webhook integrations (Authorize.net, Valor, Twilio, ConnectWise — matched by path, not exempted individually). **What I can't verify from here**: whether anything else calls this API without a browser and without hitting a `/webhook` path — a Zapier integration, a mobile app, an internal cron/script, a partner integration. If anything like that exists in production, it will start getting `403 CORS: Origin header required` the moment this deploys. Recommend a quick review of `CLIENT_ORIGIN` and any known non-browser integrations before/immediately after deploying this change; if one turns up, either add its calling pattern to the CORS exemption regex in `server/src/index.js` (`NO_ORIGIN_OK_PATH`) or have it send a matching `Origin` header.
+
+## 13. Decide on Cloudflare Turnstile for public form submissions (Phase 4, M-03)
+
+Server-side verification is built and ready (`server/src/services/captcha.js`) but inert — with no `TURNSTILE_SECRET_KEY` set, every form submission skips the check entirely (same treatment as AV scanning and HIBP: an optional control, not force-enabled). If you want it live:
+
+1. Create a free Turnstile site at `dash.cloudflare.com` (no Cloudflare-proxied domain required — Turnstile works standalone).
+2. Set `TURNSTILE_SECRET_KEY` in the server's environment variables (Railway).
+3. Set the matching site key as `VITE_TURNSTILE_SITE_KEY` in the client's build environment.
+4. **The client-side widget itself isn't built yet** — this needs a small React component added to the form-render page (`client/src/frontend/pages/...` wherever public forms render) that loads Cloudflare's Turnstile script and submits its token as `turnstile_token` alongside the form body. Ask me to build this whenever you're ready to turn CAPTCHA on; it's a contained, fairly small addition on top of what already exists server-side.
+
+No urgency — the other M-03 fixes (field allowlisting, per-field caps, empty-fields-only contact updates) close the worst part of the finding on their own.
+
 ---
 
-*Last updated: end of Phase 2 (complete), this session. C-02's full fix (Phase 1) is the only remaining piece of unfinished remediation work from the original plan.*
+*Last updated: end of Phase 4 (complete), this session. Phase 3 (MFA) is in progress next; Phase 5 (adversarial retest) follows it.*

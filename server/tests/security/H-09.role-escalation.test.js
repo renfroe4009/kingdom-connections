@@ -17,6 +17,7 @@
 const http = require('http');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:4220';
+const ORIGIN_HEADER = { Origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5220').split(',')[0].trim() };
 const EMAIL    = process.env.ROLES_ADMIN_EMAIL    || 'sectest-rolesadmin@localcrm.local';
 const PASSWORD = process.env.ROLES_ADMIN_PASSWORD || 'SecTest123!';
 const ADMIN_ROLE_ID  = Number(process.env.ADMIN_ROLE_ID  || 1);
@@ -29,7 +30,7 @@ function request(method, path, { token, body } = {}) {
     const url = new URL(API_BASE + path);
     const req = http.request(url, {
       method,
-      headers: {
+      headers: { ...ORIGIN_HEADER,
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),

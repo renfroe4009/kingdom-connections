@@ -13,6 +13,7 @@
 const http = require('http');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:4220';
+const ORIGIN_HEADER = { Origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5220').split(',')[0].trim() };
 const STAFF_EMAIL  = process.env.STAFF_EMAIL  || 'sectest-staff@localcrm.local';
 const STAFF_PASSWORD = process.env.STAFF_PASSWORD || 'SecTest123!';
 const PORTAL_EMAIL    = process.env.PORTAL_EMAIL    || 'froe4009@gmail.com';
@@ -25,7 +26,7 @@ function request(method, path_, { token, qs } = {}) {
     const url = new URL(API_BASE + path_ + (qs ? `?${qs}` : ''));
     const req = http.request(url, {
       method,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { ...ORIGIN_HEADER, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
@@ -42,7 +43,7 @@ async function login(email, password) {
     const url = new URL(API_BASE + '/api/auth/login');
     const req = http.request(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      headers: { ...ORIGIN_HEADER, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
     }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));

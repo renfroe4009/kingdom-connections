@@ -15,6 +15,7 @@ const { sendMail } = require('../services/mailer');
 const { renderBySlug } = require('../services/templates');
 const { tagInvoicePaymentAsDonation } = require('../services/constituents');
 const { maybeSendReceiptEmail } = require('../services/receipts');
+const { passwordSchema, hashPassword, isPasswordBreached, BCRYPT_COST } = require('../services/passwordPolicy');
 
 // Require the user to be in the 'portal' role (in addition to an admin bypass)
 function requirePortal(req, res, next) {
@@ -68,7 +69,10 @@ router.post('/admin/users', requireAuth, requirePermission('portal.manage'), asy
     const [[existing]] = await db.query('SELECT id FROM users WHERE email = :e', { e: contact.email });
 
     const tempPassword = crypto.randomBytes(12).toString('base64url');
-    const password_hash = await bcrypt.hash(tempPassword, 10);
+    // Security remediation M-04 — standardized bcrypt cost (this is a
+    // random, high-entropy system-generated password, not user-chosen, so
+    // no length/breach check applies — only the hash cost needed bumping).
+    const password_hash = await bcrypt.hash(tempPassword, BCRYPT_COST);
 
     let userId;
     if (existing) {
@@ -160,7 +164,8 @@ const registerLimiter = rateLimit({
 
 const registerSchema = z.object({
   email:      z.string().email(),
-  password:   z.string().min(8),
+  // Security remediation M-04 — shared passwordSchema.
+  password:   passwordSchema,
   first_name: z.string().min(1),
   last_name:  z.string().min(1),
   phone:      z.string().optional().nullable(),
@@ -190,7 +195,11 @@ router.post('/register', registerLimiter, async (req, res, next) => {
       contactId = ins.insertId;
     }
 
-    const password_hash = await bcrypt.hash(d.password, 12);
+    const breach = await isPasswordBreached(d.password);
+    if (breach.breached) {
+      return res.status(400).json({ error: 'This password has appeared in a known data breach. Please choose a different one.' });
+    }
+    const password_hash = await hashPassword(d.password);
     const rawToken  = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const expires   = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h to verify
@@ -1284,7 +1293,8 @@ router.put('/me/password', requireAuth, requirePortal, async (req, res, next) =>
   try {
     const { current_password, new_password, confirm_password } = z.object({
       current_password: z.string().min(1),
-      new_password:     z.string().min(8, 'New password must be at least 8 characters'),
+      // Security remediation M-04 — shared passwordSchema.
+      new_password:     passwordSchema,
       confirm_password: z.string().min(1),
     }).parse(req.body);
 
@@ -1301,9 +1311,18 @@ router.put('/me/password', requireAuth, requirePortal, async (req, res, next) =>
     const ok = await bcrypt.compare(current_password, user.password_hash);
     if (!ok) return res.status(400).json({ error: 'Current password is incorrect.' });
 
-    const newHash = await bcrypt.hash(new_password, 12);
+    const breach = await isPasswordBreached(new_password);
+    if (breach.breached) {
+      return res.status(400).json({ error: 'This password has appeared in a known data breach. Please choose a different one.' });
+    }
+
+    const newHash = await hashPassword(new_password);
+    // Security remediation H-05 — this self-service change was the one
+    // password-set path H-05 missed: it swapped password_hash but left
+    // every already-issued token (including a possibly-compromised one)
+    // valid, same gap H-05 closed everywhere else.
     await db.query(
-      'UPDATE users SET password_hash = :hash WHERE id = :id',
+      'UPDATE users SET password_hash = :hash, token_epoch = token_epoch + 1 WHERE id = :id',
       { hash: newHash, id: user.id }
     );
 

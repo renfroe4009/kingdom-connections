@@ -14,6 +14,7 @@
 const http = require('http');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:4220';
+const ORIGIN_HEADER = { Origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5220').split(',')[0].trim() };
 const PORTAL_EMAIL    = process.env.PORTAL_EMAIL    || 'froe4009@gmail.com';
 const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD || 'DonorTest123!';
 const STAFF_EMAIL     = process.env.STAFF_EMAIL     || 'sectest-staff@localcrm.local';
@@ -25,7 +26,7 @@ function request(method, path, { token, body } = {}) {
     const url = new URL(API_BASE + path);
     const req = http.request(url, {
       method,
-      headers: {
+      headers: { ...ORIGIN_HEADER,
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),

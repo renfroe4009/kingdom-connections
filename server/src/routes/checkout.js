@@ -121,6 +121,27 @@ async function loadCartBySessionKey(session_key) {
   return { cart, items: [...productItems, ...ticketItems] };
 }
 
+// Security remediation M-02 — tax_exempt was a client-supplied boolean
+// trusted straight into calcTax; any shopper could self-declare exemption.
+// The only server-side source of truth for exemption in this schema is an
+// organization's own tax_exempt flag (contacts have no such column of
+// their own) — resolved via the contact's linked organization, never from
+// the request. A contact with no organization (the common storefront case)
+// is simply never exempt; there's no path for an anonymous shopper to
+// self-certify exemption at checkout, which is the correct default for a
+// B2C storefront (real B2B exemptions are set up in the CRM, not typed in
+// at checkout).
+async function resolveTaxExempt(contactId) {
+  if (!contactId) return false;
+  const [[row]] = await db.query(
+    `SELECT o.tax_exempt FROM contacts c
+       LEFT JOIN organizations o ON o.id = c.organization_id
+      WHERE c.id = :contactId`,
+    { contactId }
+  );
+  return !!row?.tax_exempt;
+}
+
 async function calcTax({ state, country, subtotal, tax_exempt }) {
   if (tax_exempt) return 0;
   const [[rate]] = await db.query(
@@ -190,7 +211,6 @@ const estimateSchema = z.object({
   shipping_state: z.string().optional(),
   shipping_country: z.string().optional(),
   shipping_rate_id: z.number().optional().nullable(),
-  tax_exempt: z.boolean().optional(),
 });
 
 router.post('/estimate', async (req, res, next) => {
@@ -206,7 +226,11 @@ router.post('/estimate', async (req, res, next) => {
     // push an intentionally-free order above $0.
     const isFreeOrder = subtotal === 0;
     const shipping = !isFreeOrder && hasProducts ? await calcShipping({ shipping_rate_id: d.shipping_rate_id, subtotal, weight_oz }) : 0;
-    const tax = isFreeOrder ? 0 : await calcTax({ state: d.shipping_state, country: d.shipping_country, subtotal, tax_exempt: d.tax_exempt });
+    // No contact identity exists yet at the estimate step (this schema has
+    // no email field) — always preview as non-exempt. See resolveTaxExempt
+    // above; the real charge in buildPendingOrder always uses the
+    // server-resolved value regardless of what this preview showed.
+    const tax = isFreeOrder ? 0 : await calcTax({ state: d.shipping_state, country: d.shipping_country, subtotal, tax_exempt: false });
     const fee = isFreeOrder ? { amount: 0, label: null } : await calcCommerceProcessingFee({ subtotal, shipping, tax });
     const total = Math.round((subtotal + shipping + tax + fee.amount) * 100) / 100;
     res.json({ subtotal, shipping, tax, processing_fee: fee.amount, fee_label: fee.label, total, requires_shipping: hasProducts });
@@ -231,7 +255,6 @@ const checkoutFieldsSchema = z.object({
   shipping_country: z.string().optional(),
   shipping_rate_id: z.number().optional().nullable(),
   shipping_method_name: z.string().optional().nullable(),
-  tax_exempt: z.boolean().optional(),
   customer_note: z.string().optional().nullable(),
 });
 // card_token is required unless the order turns out to be $0 (an all-free-
@@ -277,19 +300,32 @@ async function buildPendingOrder(d, method, customerIp, contactIdOverride) {
   // shipping/tax/a processing fee, and doesn't need a gateway configured at
   // all — nothing is being charged.
   const isFreeOrder = subtotal === 0;
+
+  // A logged-in portal user paying with a saved card already has a known
+  // contact_id — use it directly instead of matching/creating one by email,
+  // the same correctness fix applied to donations (see portal.js's
+  // /donations/checkout). Resolved BEFORE the tax calc below (security
+  // remediation M-02) — tax_exempt is derived from this contact's
+  // organization, never trusted from the request.
+  const contactId = contactIdOverride || await findOrCreateContact(d);
+  const taxExempt = await resolveTaxExempt(contactId);
+
   const shipping = !isFreeOrder && productItems.length > 0 ? await calcShipping({ shipping_rate_id: d.shipping_rate_id, subtotal, weight_oz }) : 0;
-  const tax = isFreeOrder ? 0 : await calcTax({ state: d.shipping_state, country: d.shipping_country, subtotal, tax_exempt: d.tax_exempt });
+  const tax = isFreeOrder ? 0 : await calcTax({ state: d.shipping_state, country: d.shipping_country, subtotal, tax_exempt: taxExempt });
 
   const cfg = await getDefaultGateway();
   if (!isFreeOrder && (!cfg || cfg.gateway !== 'valor')) throw Object.assign(new Error('No active payment gateway configured'), { status: 400 });
   const fee = isFreeOrder ? { amount: 0, label: null } : await calcCommerceProcessingFee({ subtotal, shipping, tax });
   const total = Math.round((subtotal + shipping + tax + fee.amount) * 100) / 100;
+  // Security remediation M-02 — final sanity assertion before this total is
+  // ever handed to a charge call. The qty validation added to cart.js
+  // should make a negative subtotal impossible by construction, but this
+  // is the last checkpoint before money moves, so assert it directly
+  // rather than trusting every upstream path to have gotten it right.
+  if (total < 0 || subtotal < 0) {
+    throw Object.assign(new Error('Invalid order total'), { status: 400 });
+  }
 
-  // A logged-in portal user paying with a saved card already has a known
-  // contact_id — use it directly instead of matching/creating one by email,
-  // the same correctness fix applied to donations (see portal.js's
-  // /donations/checkout).
-  const contactId = contactIdOverride || await findOrCreateContact(d);
   const order_number = await nextOrderNumber();
 
   const [ins] = await db.query(
@@ -300,7 +336,7 @@ async function buildPendingOrder(d, method, customerIp, contactIdOverride) {
        :total, :shipping_name, :shipping_line1, :shipping_line2, :shipping_city, :shipping_state, :shipping_zip,
        :shipping_country, :shipping_method, :customer_note, 'unpaid')`,
     {
-      order_number, contact_id: contactId, subtotal, shipping, tax, tax_exempt: d.tax_exempt ? 1 : 0, total,
+      order_number, contact_id: contactId, subtotal, shipping, tax, tax_exempt: taxExempt ? 1 : 0, total,
       shipping_name: `${d.first_name} ${d.last_name}`, shipping_line1: d.shipping_line1 || null,
       shipping_line2: d.shipping_line2 || null, shipping_city: d.shipping_city || null, shipping_state: d.shipping_state || null,
       shipping_zip: d.shipping_zip || null, shipping_country: d.shipping_country || 'US',

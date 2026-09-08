@@ -29,6 +29,7 @@ const mysql = require('mysql2/promise');
 const jwt = require('jsonwebtoken');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:4220';
+const ORIGIN_HEADER = { Origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5220').split(',')[0].trim() };
 const ADMIN_EMAIL    = process.env.ADMIN_EMAIL    || 'sectest-admin@localcrm.local';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'SecTest123!';
 const ROLES_ADMIN_EMAIL    = process.env.ROLES_ADMIN_EMAIL    || 'sectest-rolesadmin@localcrm.local';
@@ -41,7 +42,7 @@ function request(method, pathname, { token, body } = {}) {
     const data = body ? JSON.stringify(body) : null;
     const req = http.request(new URL(API_BASE + pathname), {
       method,
-      headers: {
+      headers: { ...ORIGIN_HEADER,
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
@@ -133,7 +134,11 @@ async function check(name, fn) {
 
     try {
       const resetRes = await request('POST', '/api/auth/reset-password', {
-        body: { token: rawToken, password: ROLES_ADMIN_PASSWORD }, // reset to the SAME password so later tests keep working
+        // Any 12+ char value works here — the finally block below restores
+        // the account's ORIGINAL password_hash directly via SQL regardless
+        // of what this reset actually set, so other tests relying on
+        // ROLES_ADMIN_PASSWORD for login aren't affected either way.
+        body: { token: rawToken, password: 'sectest-reset-fixture-pw12' },
       });
       if (resetRes.status !== 200) throw new Error(`reset-password failed: ${resetRes.status} ${resetRes.body}`);
 
@@ -203,7 +208,7 @@ async function check(name, fn) {
     const [[before]] = await db.query('SELECT token_epoch FROM users WHERE id = :id', { id: REPORT_ID });
     const adminToken = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
     const r = await request('PUT', `/api/users/${REPORT_ID}`, {
-      token: adminToken, body: { password: 'SecTest123!' }, // reset to its own known password
+      token: adminToken, body: { password: 'SecTestReport123!' }, // 12+ chars — M-04's shared password policy
     });
     if (r.status !== 200) throw new Error(`PUT failed: ${r.status} ${r.body}`);
     const [[after]] = await db.query('SELECT token_epoch FROM users WHERE id = :id', { id: REPORT_ID });

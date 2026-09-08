@@ -12,10 +12,18 @@
 // =============================================================================
 const router = require('express').Router();
 const crypto = require('crypto');
+const { z } = require('zod');
 const { rateLimit } = require('express-rate-limit');
 const { db } = require('../db');
 
 const HOLD_MINUTES = 15;
+
+// Security remediation M-02 — POST /items did `Number(qty)` with no floor or
+// cap: a negative quantity produced a negative line total (cartPayload sums
+// unit_price * qty unconditionally), letting a shopper discount or zero out
+// their own cart. 100 is a generous cap for a single line item — this is a
+// storefront cart, not a wholesale ordering system.
+const qtySchema = z.number().int().min(1).max(100);
 
 // Security remediation H-07 — no limit meant an attacker could exhaust
 // ticket-hold capacity (denial of inventory) with repeated adds, holding
@@ -120,6 +128,8 @@ router.post('/items', cartItemsLimiter, async (req, res, next) => {
   try {
     const { product_id, ticket_type_id, qty = 1 } = req.body;
     if (!product_id && !ticket_type_id) return res.status(400).json({ error: 'product_id or ticket_type_id required' });
+    const qtyResult = qtySchema.safeParse(qty);
+    if (!qtyResult.success) return res.status(400).json({ error: 'qty must be a whole number between 1 and 100' });
     const cart = await getOrCreateCart(req);
 
     if (ticket_type_id) {
@@ -134,7 +144,7 @@ router.post('/items', cartItemsLimiter, async (req, res, next) => {
         `SELECT id, qty FROM cart_items WHERE cart_id = :cart_id AND item_type = 'event_ticket' AND ticket_type_id = :ticket_type_id`,
         { cart_id: cart.id, ticket_type_id }
       );
-      const addQty = Number(qty);
+      const addQty = qtyResult.data;
       // Availability excludes this cart's own existing hold on the same ticket
       // type, since we're about to replace it with the new total anyway.
       const available = await computeTicketAvailable(ticket_type_id, { excludeCartId: cart.id });
@@ -163,7 +173,7 @@ router.post('/items', cartItemsLimiter, async (req, res, next) => {
       `SELECT id, qty FROM cart_items WHERE cart_id = :cart_id AND item_type = 'product' AND product_id = :product_id`,
       { cart_id: cart.id, product_id }
     );
-    const newQty = (existing?.qty || 0) + Number(qty);
+    const newQty = (existing?.qty || 0) + qtyResult.data;
     if (product.track_inventory && newQty > product.stock_qty) {
       return res.status(400).json({ error: `Only ${product.stock_qty} left in stock` });
     }
@@ -187,19 +197,28 @@ router.put('/items/:id', async (req, res, next) => {
       await db.query('DELETE FROM cart_items WHERE id = :id AND cart_id = :cart_id', { id: req.params.id, cart_id: cart.id });
       return res.json(await cartPayload(cart));
     }
+    const qtyResult = qtySchema.safeParse(qty);
+    if (!qtyResult.success) return res.status(400).json({ error: 'qty must be a whole number between 1 and 100' });
 
     const [[item]] = await db.query('SELECT * FROM cart_items WHERE id = :id AND cart_id = :cart_id', { id: req.params.id, cart_id: cart.id });
     if (!item) return res.json(await cartPayload(cart));
 
     if (item.item_type === 'event_ticket') {
       const available = await computeTicketAvailable(item.ticket_type_id, { excludeCartId: cart.id });
-      if (available != null && qty > available) {
+      if (available != null && qtyResult.data > available) {
         return res.status(400).json({ error: `Only ${available} ticket(s) left` });
       }
       const holdExpiresAt = new Date(Date.now() + HOLD_MINUTES * 60 * 1000);
-      await db.query('UPDATE cart_items SET qty = :qty, hold_expires_at = :hold WHERE id = :id', { id: item.id, qty, hold: holdExpiresAt });
+      await db.query('UPDATE cart_items SET qty = :qty, hold_expires_at = :hold WHERE id = :id', { id: item.id, qty: qtyResult.data, hold: holdExpiresAt });
     } else {
-      await db.query('UPDATE cart_items SET qty = :qty WHERE id = :id AND cart_id = :cart_id', { id: req.params.id, qty, cart_id: cart.id });
+      // Security remediation M-02 — this update previously skipped the
+      // stock check PUT's sibling POST /items applies, so a quantity could
+      // be pushed past stock_qty after the item was already in the cart.
+      const [[product]] = await db.query('SELECT track_inventory, stock_qty FROM products WHERE id = :id', { id: item.product_id });
+      if (product?.track_inventory && qtyResult.data > product.stock_qty) {
+        return res.status(400).json({ error: `Only ${product.stock_qty} left in stock` });
+      }
+      await db.query('UPDATE cart_items SET qty = :qty WHERE id = :id AND cart_id = :cart_id', { id: req.params.id, qty: qtyResult.data, cart_id: cart.id });
     }
     res.json(await cartPayload(cart));
   } catch (err) { next(err); }

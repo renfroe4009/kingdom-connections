@@ -122,15 +122,28 @@ app.use(helmet({
 // otherwise a CLIENT_ORIGIN pasted as a full URL silently fails every request.
 const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
   .split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean);
-app.use(cors({
-  origin: (origin, cb) => {
-    // Allow requests with no origin (curl, Postman, server-to-server)
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    const err = new Error(`CORS: origin ${origin} not allowed`);
-    err.status = 403;
-    cb(err);
-  },
-  credentials: true,
+// Security remediation M-06 — a missing Origin header was allowed on every
+// route, not just the handful that actually need it. That's not browser-
+// exploitable today (this app is bearer-token, not cookie, auth — nothing
+// for a browser to attach automatically to a no-Origin request), but it's
+// unnecessary defense-in-depth loss, and the audit specifically flags it as
+// something that becomes exploitable if a future refresh-token/cookie
+// change is ever made. Webhook routes (Authorize.net, Valor, Twilio,
+// ConnectWise) are genuinely server-to-server — they authenticate by HMAC
+// signature, never send an Origin, and must keep working — everything else
+// now requires a real, allowlisted Origin.
+// /api/health is exempt alongside webhooks — Railway's own uptime probe (and
+// any external monitor) is a plain HTTP health check, not a browser
+// request, and never sends an Origin header. Rejecting it here would look
+// identical to the service actually being down.
+const NO_ORIGIN_OK_PATH = /\/webhook(\/|$)|^\/api\/health$/;
+app.use(cors((req, cb) => {
+  const origin = req.headers.origin;
+  const allowed = (origin && allowedOrigins.includes(origin)) || (!origin && NO_ORIGIN_OK_PATH.test(req.path));
+  if (allowed) return cb(null, { origin: true, credentials: true });
+  const err = new Error(origin ? `CORS: origin ${origin} not allowed` : 'CORS: Origin header required');
+  err.status = 403;
+  cb(err);
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

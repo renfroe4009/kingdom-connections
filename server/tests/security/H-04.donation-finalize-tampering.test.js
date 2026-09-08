@@ -18,6 +18,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 const mysql = require('mysql2/promise');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:4220';
+const ORIGIN_HEADER = { Origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5220').split(',')[0].trim() };
 const ADMIN_EMAIL    = process.env.ADMIN_EMAIL    || 'sectest-admin@localcrm.local';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'SecTest123!';
 
@@ -27,7 +28,7 @@ function request(method, path_, { token, body } = {}) {
     const url = new URL(API_BASE + path_);
     const req = http.request(url, {
       method,
-      headers: {
+      headers: { ...ORIGIN_HEADER,
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),

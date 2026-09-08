@@ -16,11 +16,12 @@
 const http = require('http');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:4220';
+const ORIGIN_HEADER = { Origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5220').split(',')[0].trim() };
 const TEST_KEY = 'media/library/2026-09-07/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png';
 
 function get(path) {
   return new Promise((resolve, reject) => {
-    http.get(API_BASE + path, (res) => {
+    http.get(API_BASE + path, { headers: ORIGIN_HEADER }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));

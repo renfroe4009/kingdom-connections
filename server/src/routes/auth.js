@@ -9,6 +9,16 @@ const { z } = require('zod');
 const { db } = require('../db');
 const { signToken, requireAuth } = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
+const { passwordSchema, hashPassword, needsRehash, isPasswordBreached } = require('../services/passwordPolicy');
+
+// Security remediation M-05 — a non-existent email returned in a few ms
+// (no bcrypt.compare call at all), while an existing one cost ~100ms for the
+// real comparison. That gap is stable and large enough to enumerate valid
+// accounts remotely. Comparing against a fixed dummy hash on the "no such
+// user" path costs the same ~100ms regardless, closing the timing gap. The
+// hash itself is never checked against anything real — any fixed bcrypt
+// hash works, since bcrypt.compare('x', DUMMY_HASH) always returns false.
+const DUMMY_HASH = bcrypt.hashSync('sectest-dummy-password-for-timing-parity', 12);
 
 const loginSchema = z.object({
   email:    z.string().email(),
@@ -48,10 +58,20 @@ router.post('/login', loginLimiter, async (req, res, next) => {
       { email }
     );
     const user = rows[0];
-    if (!user || !user.is_active) return res.status(401).json({ error: 'Invalid credentials' });
+    // Security remediation M-05 — always run a bcrypt comparison, even when
+    // no user matched, so both paths cost the same regardless of whether
+    // the email exists. See DUMMY_HASH above.
+    const ok = await bcrypt.compare(password, user?.password_hash || DUMMY_HASH);
+    if (!user || !user.is_active || !ok) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    // Security remediation M-04 — rehash on successful login if the stored
+    // hash predates the current bcrypt cost (12), rather than forcing every
+    // existing user to reset. Best-effort: never blocks the login itself.
+    if (needsRehash(user.password_hash)) {
+      hashPassword(password)
+        .then((hash) => db.query('UPDATE users SET password_hash = :hash WHERE id = :id', { hash, id: user.id }))
+        .catch((e) => console.warn('[auth] rehash-on-login failed:', e.message));
+    }
 
     await db.query('UPDATE users SET last_login_at = NOW() WHERE id = :id', { id: user.id });
     // Security remediation M-07 — login is a security-relevant event; a
@@ -223,8 +243,15 @@ router.post('/reset-password', resetLimiter, async (req, res, next) => {
   try {
     const { token, password } = z.object({
       token:    z.string().min(1),
-      password: z.string().min(8),
+      password: passwordSchema,
     }).parse(req.body);
+
+    // Security remediation M-04 — best-effort breach check; never blocks on
+    // a network/API failure (see isPasswordBreached's own doc comment).
+    const breach = await isPasswordBreached(password);
+    if (breach.breached) {
+      return res.status(400).json({ error: 'This password has appeared in a known data breach. Please choose a different one.' });
+    }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
@@ -241,7 +268,7 @@ router.post('/reset-password', resetLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'Reset link is invalid or has expired.' });
     }
 
-    const newHash = await bcrypt.hash(password, 12);
+    const newHash = await hashPassword(password);
     // Security remediation H-05 — bumping token_epoch invalidates every
     // session issued before this reset (a stolen/still-live token can no
     // longer authenticate), the actual mitigation a "reset your password"

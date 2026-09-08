@@ -5,12 +5,12 @@
 // =============================================================================
 const router = require('express').Router();
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth, requirePermission, signToken } = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
 const { renderBySlug } = require('../services/templates');
+const { passwordSchema, hashPassword, isPasswordBreached } = require('../services/passwordPolicy');
 
 function sha256(s) { return crypto.createHash('sha256').update(s).digest('hex'); }
 function acceptUrl(token) {
@@ -46,12 +46,9 @@ router.get('/:token', async (req, res, next) => {
 // Creates the user, consumes invite, returns JWT (auto-login).
 // ------------------------------------------------------------------
 const acceptSchema = z.object({
-  password: z.string()
-    .min(12, 'Password must be at least 12 characters')
-    .max(128, 'Password must be at most 128 characters')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
+  // Security remediation M-04 — shared passwordSchema, see users.js's
+  // identical change for why the composition-rule regexes were removed.
+  password: passwordSchema,
   first_name: z.string().optional(),
   last_name: z.string().optional(),
   phone: z.string().optional(),
@@ -76,7 +73,11 @@ router.post('/:token/accept', async (req, res, next) => {
     const [existing] = await db.query('SELECT id FROM users WHERE email = :email LIMIT 1', { email: inv.email });
     if (existing[0]) return res.status(409).json({ error: 'A user with this email already exists. Please sign in instead.' });
 
-    const password_hash = await bcrypt.hash(data.password, 10);
+    const breach = await isPasswordBreached(data.password);
+    if (breach.breached) {
+      return res.status(400).json({ error: 'This password has appeared in a known data breach. Please choose a different one.' });
+    }
+    const password_hash = await hashPassword(data.password);
     const [ins] = await db.query(
       `INSERT INTO users (email, password_hash, first_name, last_name, phone, is_active)
        VALUES (:email, :password_hash, :first_name, :last_name, :phone, 1)`,

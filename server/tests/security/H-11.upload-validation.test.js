@@ -17,6 +17,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 const mysql = require('mysql2/promise');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:4220';
+const ORIGIN_HEADER = { Origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5220').split(',')[0].trim() };
 const ADMIN_EMAIL    = process.env.ADMIN_EMAIL    || 'sectest-admin@localcrm.local';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'SecTest123!';
 
@@ -34,7 +35,7 @@ function loginAndUpload({ filename, mimetype, buffer }) {
     const loginData = JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
     const loginReq = http.request(new URL(API_BASE + '/api/auth/login'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(loginData) },
+      headers: { ...ORIGIN_HEADER, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(loginData) },
     }, (loginRes) => {
       const chunks = [];
       loginRes.on('data', (c) => chunks.push(c));
@@ -51,7 +52,7 @@ function loginAndUpload({ filename, mimetype, buffer }) {
 
         const uploadReq = http.request(new URL(API_BASE + '/api/website/media/upload'), {
           method: 'POST',
-          headers: {
+          headers: { ...ORIGIN_HEADER,
             Authorization: `Bearer ${token}`,
             'Content-Type': `multipart/form-data; boundary=${boundary}`,
             'Content-Length': body.length,
@@ -74,7 +75,7 @@ function loginAndUpload({ filename, mimetype, buffer }) {
 
 function get(pathname) {
   return new Promise((resolve, reject) => {
-    http.get(API_BASE + pathname, (res) => {
+    http.get(API_BASE + pathname, { headers: ORIGIN_HEADER }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
