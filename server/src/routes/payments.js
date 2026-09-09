@@ -192,9 +192,24 @@ router.post('/public/checkout/:invoiceId', async (req, res, next) => {
     // /pay/:id page (NOT /pay/:id/return — that has no React route, so the
     // gateway's redirect would 404 and the auto-confirm useEffect would
     // never fire).
-    const origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    // Security remediation (Phase 5 adversarial retest, new finding) — the
+    // same-origin check used to be `requested.startsWith(origin)`, a prefix
+    // check bypassable with `${origin}.evil.com`, `${origin}@evil.com`, or
+    // (since origin here has no trailing slash) `${origin}evil.com`. This
+    // matters more than a typical open redirect: returnUrl feeds directly
+    // into the gateway call below — Authorize.net's hosted-payment
+    // iframe-communicator origin AND Valor's redirect/callback URLs — so a
+    // bypass could redirect the gateway's own transaction-response
+    // hand-off to an attacker-controlled host. Compare the PARSED origin
+    // exactly (scheme+host+port), matching the same allowedOrigins list
+    // index.js's CORS check uses (CLIENT_ORIGIN, comma-separated).
+    const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+      .split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean);
+    const origin = allowedOrigins[0];
     const requested = String(req.body?.returnUrl || '').trim();
-    const returnUrl = (requested && requested.startsWith(origin))
+    let requestedOrigin = null;
+    try { requestedOrigin = new URL(requested).origin; } catch { /* not a valid absolute URL */ }
+    const returnUrl = (requested && requestedOrigin && allowedOrigins.includes(requestedOrigin))
       ? requested
       : `${origin}/pay/${invoiceId}?paid=1`;
 

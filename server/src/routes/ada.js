@@ -1,7 +1,31 @@
 const express  = require('express');
+const { rateLimit } = require('express-rate-limit');
 const { db }   = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
+const { isSafeTargetUrl } = require('../services/urlSafety');
 const router   = express.Router();
+
+// Security remediation (Phase 5 adversarial retest, new finding) — this
+// route previously fetched any caller-supplied URL server-side with NO
+// authentication and NO restriction on target: a full unauthenticated
+// SSRF primitive, able to reach internal-network/private-IP services
+// (and, depending on the hosting environment, cloud metadata endpoints)
+// and reflect derived content (title, headings, link text) back to the
+// caller. requireAuth + settings.manage below closes the "anyone on the
+// internet" exposure; isSafeTargetUrl (services/urlSafety.js) is defense-
+// in-depth against a legitimate-but-compromised staff session (or a staff
+// member pasting a malicious link without realizing it) being used to
+// probe the internal network.
+
+// A page-accessibility check is not something a legitimate caller ever
+// needs to run at high volume against arbitrary external hosts.
+const adaCheckLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait a few minutes and try again.' },
+});
 
 // ── DB-based audit (for CMS pages) ────────────────────────────────────────────
 // Fetching the SPA URL only returns the shell HTML; we audit the source data instead.
@@ -150,16 +174,23 @@ function attr(tag, name) {
 function hasAttr(tag, name) { return new RegExp(`\\b${name}\\b`, 'i').test(tag); }
 function innerText(html)     { return html.replace(/<[^>]+>/g, '').trim(); }
 
-router.get('/check', async (req, res) => {
+router.get('/check', requireAuth, requirePermission('settings.manage'), adaCheckLimiter, async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'url query param required' });
+  if (!(await isSafeTargetUrl(url))) {
+    return res.status(400).json({ error: 'That URL cannot be checked (must be a public http/https address).' });
+  }
 
   let html;
   try {
     const r = await fetch(url, {
       headers: { 'User-Agent': 'SPA-ADA-Checker/1.0' },
       signal: AbortSignal.timeout(12000),
+      redirect: 'manual', // a same-origin-looking redirect could still repoint at an internal address
     });
+    if (r.status >= 300 && r.status < 400) {
+      return res.status(400).json({ error: 'Redirects are not followed for this check — pass the final URL directly.' });
+    }
     if (!r.ok) return res.status(502).json({ error: `Upstream ${r.status}: ${r.statusText}` });
     html = await r.text();
   } catch (e) {

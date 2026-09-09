@@ -20,6 +20,7 @@ const { sendSms }     = require('./sms');
 const { buildContext } = require('./templates');
 const { render }       = require('./templates');
 const { logActivity }  = require('./activity');
+const { isSafeTargetUrl } = require('./urlSafety');
 
 // ---------------------------------------------------------------------------
 // Public: fire a trigger
@@ -379,12 +380,24 @@ async function executeAction(actionType, config, context, enrollmentId) {
 
     case 'webhook': {
       if (!config.url) return { skipped: true, reason: 'No URL' };
+      // Security remediation (Phase 5 adversarial retest, new finding) —
+      // config.url is unvalidated JSON from a stored workflow's
+      // flow_definition; a webhook step can be triggered indirectly by an
+      // UNAUTHENTICATED public form submission (routes/forms.js), so
+      // whatever host an automations.write-holding user configured here
+      // is reachable by anyone who can find/guess the trigger, not just
+      // staff. Same guard as ada.js/checkout's returnUrl: resolve-then-
+      // check the IP, http/https only, no automatic redirect-following.
+      if (!(await isSafeTargetUrl(config.url))) {
+        return { skipped: true, reason: 'Webhook URL is not allowed (must be a public http/https address)' };
+      }
       const payload = { trigger: context.trigger_type, entity_type: context.entity_type, entity_id: context.entity_id, ...context };
       const resp = await fetch(config.url, {
         method:  config.method || 'POST',
         headers: { 'Content-Type': 'application/json', ...(config.headers || {}) },
         body:    JSON.stringify(payload),
         signal:  AbortSignal.timeout(10000),
+        redirect: 'manual',
       });
       return { status: resp.status };
     }

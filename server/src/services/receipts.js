@@ -9,6 +9,7 @@ const { db } = require('../db');
 const { resolveBusinessLogoUrl, renderBySlug, classifyPayment } = require('./templates');
 const { sendMail } = require('./mailer');
 const moduleSettings = require('./moduleSettings');
+const { isSafeTargetUrl } = require('./urlSafety');
 
 // --------- brand (business_settings + Media Library) ---------
 //
@@ -48,7 +49,15 @@ async function logoUrlToBuffer(logoUrl) {
       const base64 = logoUrl.split(',')[1];
       return base64 ? Buffer.from(base64, 'base64') : null;
     }
-    const res = await fetch(logoUrl);
+    // Security remediation (Phase 5 adversarial retest, new finding) —
+    // logoUrl comes from business_settings.logo_web_url, an admin-set
+    // value (PUT /api/settings/business, settings.manage) with no URL
+    // validation on write. Triggered from unauthenticated public receipt
+    // routes (GET /api/payments/public/receipt/by-token/:token), so an
+    // admin-configured internal-network URL here would be fetched on
+    // every public receipt view. Same guard as ada.js/automations.js.
+    if (!(await isSafeTargetUrl(logoUrl))) return null;
+    const res = await fetch(logoUrl, { redirect: 'manual' });
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
   } catch (_e) {
@@ -811,7 +820,10 @@ async function maybeSendReceiptEmail(paymentId) {
   }
 }
 
+// logoUrlToBuffer is exported for direct testing (Phase 5 SSRF fix
+// regression test) — it has no other external caller.
 module.exports = {
   loadReceiptData, loadReceiptDataByToken, renderReceiptHtml, renderReceiptPdf,
   loadYearEndStatementData, renderYearEndStatementPdf, maybeSendReceiptEmail,
+  logoUrlToBuffer,
 };

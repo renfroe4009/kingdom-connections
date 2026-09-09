@@ -168,6 +168,17 @@ None of this is a large lift individually — ask me to build it whenever you're
 
 Confirmed with you: TOTP only for this pass. The original audit's design also includes WebAuthn/passkey support (`user_mfa_credentials` table, `@simplewebauthn/server` + `@simplewebauthn/browser`, discoverable/usernameless login). This needs a real production RP-ID (the exact deployed domain) to configure and test properly — something this local session can't safely validate — so it's recorded here as a known, deliberate gap rather than built partially. If you want it later, the design is already fully specified in `SECURITY-AUDIT-2026-08-21.md` §7 and would layer in alongside the existing TOTP flow (both would satisfy MFA enrollment; a user could have either or both).
 
+## 16. Six lower-priority SSRF-adjacent items, reviewed but not fixed (Phase 5)
+
+Full detail in `Security Review/PHASE5-ADVERSARIAL-RETEST.md` §3. All require a `settings.manage` admin account to already be compromised (not reachable by a lower-privilege or unauthenticated caller, unlike the 4 findings that were fixed), or are cosmetic:
+
+- `services/usps.js` / `services/connectwise.js` — `usps_settings.base_url` / `cw_manage_settings.site_url` are admin-set with only zod's `.url()` validation (accepts any host); a compromised admin account could repoint either at an internal address, leaking USPS/ConnectWise credentials to that host. Fix would be applying the same `isSafeTargetUrl()` guard used elsewhere this phase, or restricting `.url()` to an expected hostname pattern.
+- `routes/videos.js` — Vimeo oembed call doesn't `encodeURIComponent()` the video id before interpolating it into vimeo.com's own URL. Host is fixed; cosmetic query-injection only.
+- `routes/dns.js` — Cloudflare API calls don't format-validate `zoneId`/`recordId` path segments. Host is fixed; worst case is path traversal within Cloudflare's own API using the stored account token.
+- `routes/media.js` — `file_url` is built from `req.protocol`/`req.get('host')`, so a Host-header-spoofing request could persist an attacker-hosted URL; only becomes a problem if an admin later hand-picks that exact record as the site logo (a long chain). Pinning to `SERVER_ORIGIN`/`API_BASE_URL` like the rest of the codebase does would close it cheaply.
+
+None of these are urgent — flagging so they're tracked, and easy to pick up in a future pass if you want them closed too.
+
 ---
 
-*Last updated: end of Phase 3 (complete, TOTP scope), this session. Phase 5 (adversarial retest) is next and last.*
+*Last updated: end of Phase 5 (complete), this session. Every finding from the original audit, plus 4 new ones found during Phase 5's own adversarial retest, is now closed. Everything remaining in this document is a human action — no further engineering is planned.*
