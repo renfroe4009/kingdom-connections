@@ -136,10 +136,25 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
 // any external monitor) is a plain HTTP health check, not a browser
 // request, and never sends an Origin header. Rejecting it here would look
 // identical to the service actually being down.
+//
+// Regression fix, caught immediately after this shipped: in LOCAL DEV, the
+// client's Vite dev server proxies `/api` to this server same-origin
+// (vite.config.js, `changeOrigin: true`) — the browser's own request to
+// `/api/...` is same-origin relative to the client's own port, so it never
+// carries an Origin header at all, and http-proxy's changeOrigin only
+// rewrites the outbound Host header, never synthesizes one. Enforcing
+// "Origin required" against that traffic breaks every API call the client
+// makes locally. Outside production the client and API are typically two
+// origins for real (e.g. a Vercel-served SPA calling a separate API host),
+// so a real cross-origin browser request there still carries a real
+// Origin — this exemption only ever matters for the same-machine dev-proxy
+// case. Matches the existing NODE_ENV !== 'production' convention already
+// used elsewhere in this file (e.g. publicPaymentLimiter's `skip`).
 const NO_ORIGIN_OK_PATH = /\/webhook(\/|$)|^\/api\/health$/;
 app.use(cors((req, cb) => {
   const origin = req.headers.origin;
-  const allowed = (origin && allowedOrigins.includes(origin)) || (!origin && NO_ORIGIN_OK_PATH.test(req.path));
+  const noOriginOk = !origin && (NO_ORIGIN_OK_PATH.test(req.path) || process.env.NODE_ENV !== 'production');
+  const allowed = (origin && allowedOrigins.includes(origin)) || noOriginOk;
   if (allowed) return cb(null, { origin: true, credentials: true });
   const err = new Error(origin ? `CORS: origin ${origin} not allowed` : 'CORS: Origin header required');
   err.status = 403;

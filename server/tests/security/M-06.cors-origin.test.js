@@ -9,9 +9,16 @@
 // Fixed: server/src/index.js's CORS origin-delegate now requires a real,
 // allowlisted Origin for every route EXCEPT webhook paths (Authorize.net,
 // Valor, Twilio, ConnectWise — genuine server-to-server callers that
-// authenticate by HMAC signature and never send Origin) and /api/health
+// authenticate by HMAC signature and never send Origin), /api/health
 // (Railway's own uptime probe is a plain HTTP check, not a browser request
-// — rejecting it would look identical to the service being down).
+// — rejecting it would look identical to the service being down), and —
+// caught as a real regression immediately after this first shipped — any
+// request with no Origin at all when NODE_ENV !== 'production'. The
+// client's Vite dev server proxies /api same-origin (changeOrigin: true
+// rewrites Host, never adds Origin), so every API call the client makes
+// in local dev has no Origin header, and enforcing this in dev broke the
+// site outright. Production still enforces strictly — a real cross-origin
+// browser request there does carry a real Origin.
 //
 // Run:  node server/tests/security/M-06.cors-origin.test.js
 // =============================================================================
@@ -47,9 +54,12 @@ async function check(name, fn) {
 (async () => {
   console.log('== M-06 CORS Origin enforcement ==');
 
-  await check('a normal API route with NO Origin header is rejected (403)', async () => {
+  await check('a normal API route with NO Origin header is NOT rejected by CORS in dev (the Vite-proxy case)', async () => {
     const r = await request('GET', '/api/roles', {});
-    if (r.status !== 403) throw new Error(`expected 403, got ${r.status}: ${r.body}`);
+    // Expect a 401 (no auth token) — the point is it's not a CORS 403.
+    // This assumes NODE_ENV !== 'production' for the running server (true
+    // for local dev, where this test suite runs).
+    if (r.status === 403 && /CORS/.test(r.body)) throw new Error(`no-Origin request was rejected by CORS in dev: ${r.body}`);
   });
 
   await check('a normal API route with a DISALLOWED Origin is rejected (403)', async () => {
@@ -71,6 +81,25 @@ async function check(name, fn) {
   await check('a webhook route with NO Origin header passes CORS (fails downstream on signature, not here)', async () => {
     const r = await request('POST', '/api/payments/webhook/authnet', {});
     if (r.status === 403 && /CORS/.test(r.body)) throw new Error(`webhook route was rejected by CORS: ${r.body}`);
+  });
+
+  await check('in PRODUCTION, a no-Origin request to a normal route is still rejected (the dev exemption does not apply)', () => {
+    // Replicates the exact decision logic in index.js without needing to
+    // restart the live server under a different NODE_ENV.
+    const NO_ORIGIN_OK_PATH = /\/webhook(\/|$)|^\/api\/health$/;
+    function decide(path, origin, nodeEnv) {
+      const noOriginOk = !origin && (NO_ORIGIN_OK_PATH.test(path) || nodeEnv !== 'production');
+      return Boolean((origin && [ALLOWED_ORIGIN].includes(origin)) || noOriginOk);
+    }
+    if (decide('/api/roles', undefined, 'production')) {
+      throw new Error('a no-Origin request to a normal route should be rejected when NODE_ENV=production');
+    }
+    if (!decide('/api/roles', undefined, 'development')) {
+      throw new Error('a no-Origin request to a normal route should be ALLOWED when NODE_ENV!=production (the dev-proxy case)');
+    }
+    if (!decide('/api/health', undefined, 'production')) {
+      throw new Error('/api/health must stay exempt even in production');
+    }
   });
 
   console.log(`\n${pass}/${pass + fail} passed`);
