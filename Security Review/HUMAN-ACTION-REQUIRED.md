@@ -133,6 +133,30 @@ Safe to re-run. Not `required:true`-gated like #9 above, so nothing fails outrig
 
 **Also fixes a pre-existing, unrelated bug while it's here**: `users.password_reset_token` and `password_reset_expires_at` were referenced in `auth.js`'s forgot-password/reset-password routes but were never actually in `db/schema.sql` or any prior migration — every password-reset request has been failing with a real SQL error, in production too, most likely since this feature was first written. If any users have reported "forgot password doesn't work," this is almost certainly why. Fixed as part of this migration since H-05 needed to touch this exact path anyway.
 
+---
+
+## 10b. Three more migrations needed against production — not part of the security remediation itself, but shipped in the same commits
+
+Discovered and fixed while using the app during this session; each is idempotent (safe to re-run):
+
+```bash
+cd server
+# MFA tables (Phase 3, H-01) — required before anyone can enroll or the org toggle can be turned on
+node scripts/ensure-mfa-tables.js --host <prod-db-host> --database <prod-db-name> --user <prod-db-user> --password <prod-db-password>
+
+# Dedupes the AI knowledge base (was at 43,499 rows due to a missing unique
+# constraint the seeder's ON DUPLICATE KEY UPDATE needed) and adds that constraint
+node scripts/ensure-kb-unique-constraint.js --host <prod-db-host> --database <prod-db-name> --user <prod-db-user> --password <prod-db-password>
+
+# Creates 5 tables that were referenced in code (social/reports/video features)
+# but were never in schema.sql at all — these routes 500 in production today
+node scripts/ensure-missing-feature-tables.js --host <prod-db-host> --database <prod-db-name> --user <prod-db-user> --password <prod-db-password>
+```
+
+None of these are `required:true`-gated, so the app stays up without them, but: MFA enrollment/login step-up will 500 until the first script runs, and `/admin/reports/social` and related social/report/video pages will 500 until the third script runs (that's the "internal server error" bug reported and fixed live this session — it's fixed in code, but production's database still needs these tables created).
+
+---
+
 ## 11. Decide whether to shorten the JWT access-token lifetime further (Phase 2, H-05)
 
 The original audit recommended 15–30 minutes, written when there was no revocation mechanism at all — a short lifetime was the *only* way to limit a stolen token's usefulness. That's no longer true: logout now revokes a token immediately, and a password reset (self-service or admin-initiated) invalidates every other live session for that account in real time. I left `JWT_EXPIRES_IN` at its existing 8h default rather than shortening it, since there's no refresh-token mechanism in this app to absorb the usability cost of frequent re-logins for staff using the CRM all day, and the specific threat the audit was targeting (a stolen token staying valid for hours with no way to kill it) is now closed by revocation instead. If you want a shorter default anyway (defense in depth against a token that's stolen but never detected/reported), it's a one-line env var change (`JWT_EXPIRES_IN=30m` in Railway, standard `ms`-style format) — no code change needed. Flagging as your call, not mine, since it's a product/usability tradeoff, not a pure security question at this point.
@@ -152,17 +176,17 @@ Server-side verification is built and ready (`server/src/services/captcha.js`) b
 
 No urgency — the other M-03 fixes (field allowlisting, per-field caps, empty-fields-only contact updates) close the worst part of the finding on their own.
 
-## 14. Build the MFA client UI before anyone can actually use it (Phase 3, H-01)
+## 14. ~~Build the MFA client UI~~ — DONE (Phase 3, H-01)
 
-The full TOTP MFA API is built, tested, and safe to deploy as-is (default OFF, no behavior change for anyone until you turn it on) — but **there is no client UI for any of it yet**. Specifically needed before this is usable end-to-end:
+Built and committed (`Add client UI for TOTP MFA (H-01) — enrollment, login step-up, org toggle`). Covers everything originally listed here:
 
-- **Settings → Security page**: a toggle calling `GET`/`PUT /api/settings/module/security` (`{ mfa_enabled: bool }`).
-- **Personal MFA enrollment flow** (any user, e.g. under their own profile/account settings): call `POST /api/auth/mfa/totp/setup`, show the returned `qr_data_url` (already a ready-to-render `<img src>`) plus the raw `secret` as a manual-entry fallback, take a 6-digit code, call `POST /api/auth/mfa/totp/confirm`, then **display the 10 returned `recovery_codes` exactly once** (they're never retrievable again — the API only stores their hashes) with a clear "save these somewhere safe" prompt.
-- **Login step-up screen**: when `POST /api/auth/login` returns `{ mfa_required: true, mfa_token }` instead of a normal session, show a code-entry screen (plus a "use a recovery code instead" link) that calls `POST /api/auth/mfa/verify` with `{ mfa_token, code }` or `{ mfa_token, recovery_code }`, then handles the response exactly like a normal login response (it's the same shape).
-- **Disable MFA** and **regenerate recovery codes** actions, both just need a password re-entry prompt (`POST /api/auth/mfa/disable` / `POST /api/auth/mfa/recovery-codes/regenerate`).
-- Somewhere visible: surface the `mfa_setup_required: true` flag a 403 response can carry (once you turn the org toggle on) as a clear "set up two-factor authentication to continue" prompt rather than a generic error, for users who hold a mandatory permission but haven't enrolled yet.
+- **Settings → Security tab** (`SettingsPage.jsx`) — org-wide `mfa_enabled` toggle, confirms before turning on, lists which permissions become mandatory.
+- **My Account & Security page** (`/admin/account`, linked from the account dropdown) — self-service enroll (QR + manual-entry secret), confirm, one-time recovery-code display, disable, and regenerate, each password-gated.
+- **Login step-up** on both `Login.jsx` (admin) and `PortalLogin.jsx` (portal) — handles `{ mfa_required, mfa_token }`, code or recovery-code entry, falls back to re-login on an expired `mfa_pending` token.
 
-None of this is a large lift individually — ask me to build it whenever you're ready; I'd estimate it as a single focused session of client work.
+Verified via the Vite dev-server transform check (no syntax errors) and a full API-level trace of every call the new UI makes through the dev proxy — **not** a rendered-browser click-through (no browser-automation tool was available in this environment). Recommend a quick manual pass in a real browser (enroll → log out → log back in with a code → try a recovery code → disable) before or shortly after this reaches real users, since that's the one level of verification this session couldn't do itself.
+
+Not built (still open, see #15/#16 below): WebAuthn/passkeys, and the `mfa_setup_required: true` 403-flag prompt for someone who holds a mandatory permission but hasn't enrolled yet — currently that just surfaces as a permission-denied error rather than a friendly "set up 2FA to continue" screen. Low priority since the org toggle defaults OFF and enrollment is voluntary until you turn it on.
 
 ## 15. WebAuthn/passkeys were deliberately not built (Phase 3, H-01)
 
