@@ -551,6 +551,16 @@ export default function AppLayout() {
                               </div>
                             ) : null}
                           </li>
+                          <li>
+                            <Link
+                              className="dropdown-item d-flex align-items-center gap-2"
+                              to="/admin/account"
+                              onClick={() => setDropdownOpen(false)}
+                            >
+                              <iconify-icon icon="solar:shield-keyhole-line-duotone"></iconify-icon>
+                              <span>My Account &amp; Security</span>
+                            </Link>
+                          </li>
                           {adminItems.filter((a) => can(a.perm)).length > 0 && (
                             <>
                               <li>

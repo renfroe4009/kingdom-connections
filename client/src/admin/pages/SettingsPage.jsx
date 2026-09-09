@@ -131,6 +131,10 @@ export default function SettingsPage() {
   const [aiMsg, setAiMsg] = useState('');
   const [aiTesting, setAiTesting] = useState(false);
 
+  const [security, setSecurity] = useState({ mfa_enabled: false });
+  const [securityMsg, setSecurityMsg] = useState('');
+  const [securityBusy, setSecurityBusy] = useState(false);
+
   useEffect(() => {
     api.get('/settings/smtp').then((r) => r.data && setSmtp((s) => ({ ...s, ...r.data }))).catch(() => {});
     api.get('/settings/sms').then((r) => r.data && setSms((s) => ({ ...s, ...r.data, is_active: !!r.data.is_active }))).catch(() => {});
@@ -140,6 +144,7 @@ export default function SettingsPage() {
     api.get('/connectwise/import-history').then((r) => setCwImportHistory(r.data || [])).catch(() => {});
     api.get('/google/status').then((r) => setGoogle(r.data)).catch(() => setGoogle({ connected: false }));
     api.get('/ai/settings').then((r) => r.data && setAi((a) => ({ ...a, ...r.data, active: !!r.data.active }))).catch(() => {});
+    api.get('/settings/module/security').then((r) => r.data && setSecurity((s) => ({ ...s, ...r.data }))).catch(() => {});
     // Handle redirect back from Google OAuth
     const gConnected = searchParams.get('connected');
     const gError     = searchParams.get('error');
@@ -156,6 +161,24 @@ export default function SettingsPage() {
     }).catch(() => {});
     loadBatchRuns();
   }, []);
+
+  async function toggleMfaEnabled(nextEnabled) {
+    if (nextEnabled) {
+      const ok = await confirm(
+        'Once enabled, anyone holding a privileged permission (Manage Users, Manage Roles, Record Payments, Record Donations, or Manage Settings) will be blocked from those specific actions until they set up two-factor authentication themselves under My Account & Security. This never blocks sign-in, and you can turn it back off here at any time — including if you enable it before enrolling yourself. Turn on two-factor enforcement?',
+        { danger: false, confirmLabel: 'Turn on' }
+      );
+      if (!ok) return;
+    }
+    setSecurityMsg(''); setSecurityBusy(true);
+    try {
+      await api.put('/settings/module/security', { mfa_enabled: nextEnabled });
+      setSecurity((s) => ({ ...s, mfa_enabled: nextEnabled }));
+      setSecurityMsg(`Two-factor enforcement ${nextEnabled ? 'enabled' : 'disabled'}.`);
+    } catch (e) {
+      setSecurityMsg(e.response?.data?.error || 'Failed to save.');
+    } finally { setSecurityBusy(false); }
+  }
 
   async function loadBatchRuns() {
     try {
@@ -365,6 +388,9 @@ export default function SettingsPage() {
         <li className="nav-item"><button className={`nav-link ${tab === 'google' ? 'active' : ''}`} onClick={() => setTab('google')}>Google Workspace</button></li>
         <li className="nav-item"><button className={`nav-link ${tab === 'ai' ? 'active' : ''}`} onClick={() => setTab('ai')}>
           <iconify-icon icon="solar:stars-line-duotone" class="me-1"></iconify-icon>AI Assistant
+        </button></li>
+        <li className="nav-item"><button className={`nav-link ${tab === 'security' ? 'active' : ''}`} onClick={() => setTab('security')}>
+          <iconify-icon icon="solar:shield-keyhole-line-duotone" class="me-1"></iconify-icon>Security
         </button></li>
       </ul>
       </div>
@@ -930,6 +956,48 @@ export default function SettingsPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+      {tab === 'security' && (
+        <div className="card">
+          <div className="card-body">
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <iconify-icon icon="solar:shield-keyhole-line-duotone" style={{ fontSize: 24, color: 'var(--secondary)' }}></iconify-icon>
+              <h5 className="mb-0">Two-Factor Authentication</h5>
+            </div>
+            <p className="text-muted small mb-4">
+              Off by default — some organizations don't want to require this. When on, it never blocks
+              signing in; it blocks the specific privileged actions listed below until the account holder
+              has set up two-factor authentication for themselves under My Account &amp; Security (top-right
+              menu). Everyone can always enroll voluntarily regardless of this setting.
+            </p>
+
+            {securityMsg && <div className="alert alert-info py-2 mb-3">{securityMsg}</div>}
+
+            <div className="form-check form-switch mb-3">
+              <input
+                type="checkbox"
+                className="form-check-input"
+                role="switch"
+                id="mfaEnabledSwitch"
+                checked={!!security.mfa_enabled}
+                disabled={securityBusy}
+                onChange={(e) => toggleMfaEnabled(e.target.checked)}
+              />
+              <label className="form-check-label fw-semibold" htmlFor="mfaEnabledSwitch">
+                Require two-factor authentication for privileged actions
+              </label>
+            </div>
+
+            <p className="text-muted small mb-1">Affects accounts holding any of:</p>
+            <ul className="text-muted small mb-0">
+              <li>Manage Users</li>
+              <li>Manage Roles</li>
+              <li>Record / Refund Payments</li>
+              <li>Record Donations</li>
+              <li>Manage Settings</li>
+            </ul>
           </div>
         </div>
       )}

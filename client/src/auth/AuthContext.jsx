@@ -32,12 +32,32 @@ export function AuthProvider({ children }) {
     return () => { cancelled = true; };
   }, []);
 
-  async function login(email, password) {
-    const { data } = await api.post('/auth/login', { email, password });
+  // Shared by a normal login and a successful MFA verify — both end with
+  // the same { token, user } shape.
+  function establishSession(data) {
     localStorage.setItem('lc_token', data.token);
     localStorage.setItem('lc_user', JSON.stringify(data.user));
     setUser(data.user);
     return data.user;
+  }
+
+  // Returns the logged-in user on success, or { mfaRequired: true, mfaToken }
+  // when the account has TOTP enrolled — no session is established yet in
+  // that case; the caller must show a code-entry step and call verifyMfa().
+  async function login(email, password) {
+    const { data } = await api.post('/auth/login', { email, password });
+    if (data.mfa_required) return { mfaRequired: true, mfaToken: data.mfa_token };
+    return establishSession(data);
+  }
+
+  // Completes a login that returned mfaRequired — code XOR recoveryCode.
+  async function verifyMfa(mfaToken, { code, recoveryCode } = {}) {
+    const { data } = await api.post('/auth/mfa/verify', {
+      mfa_token: mfaToken,
+      ...(code ? { code } : {}),
+      ...(recoveryCode ? { recovery_code: recoveryCode } : {}),
+    });
+    return establishSession(data);
   }
 
   async function logout() {
@@ -80,7 +100,7 @@ export function AuthProvider({ children }) {
     !!user && (user.roles?.includes('admin') || user.permissions?.includes(perm));
 
   return (
-    <AuthCtx.Provider value={{ user, loading, login, logout, can, impersonating, impersonate, stopImpersonating, updateDashboardPreference }}>
+    <AuthCtx.Provider value={{ user, loading, login, verifyMfa, logout, can, impersonating, impersonate, stopImpersonating, updateDashboardPreference }}>
       {children}
     </AuthCtx.Provider>
   );

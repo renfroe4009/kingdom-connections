@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './auth/AuthContext.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import NotFound from './admin/pages/NotFound.jsx';
+import AccountSecurityPage from './admin/pages/AccountSecurityPage.jsx';
 import AiKnowledgeBasePage from './admin/pages/AiKnowledgeBasePage.jsx';
 import AppLayout from './admin/components/AppLayout.jsx';
 import Login from './admin/pages/Login.jsx';
@@ -206,6 +207,7 @@ export default function App() {
       }>
         <Route index element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="dashboard"          element={<DashboardRouter />} />
+        <Route path="account"            element={<AccountSecurityPage />} />
 
         <Route path="contacts"           element={<PermissionRoute perm="contacts.read"><ContactsList /></PermissionRoute>} />
         <Route path="contacts/:id"       element={<PermissionRoute perm="contacts.read"><ContactDetail /></PermissionRoute>} />

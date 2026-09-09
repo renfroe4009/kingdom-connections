@@ -5,10 +5,10 @@ import BrandMark from '../../components/BrandMark.jsx';
 import api from '../../../api/client.js';
 import { useAdminTheme } from '../../../hooks/useAdminTheme.js';
 
-// view: 'login' | 'forgot' | 'forgot_sent'
+// view: 'login' | 'mfa' | 'forgot' | 'forgot_sent'
 export default function PortalLogin() {
   useAdminTheme();
-  const { login, user } = useAuth();
+  const { login, verifyMfa, user } = useAuth();
   const nav = useNavigate();
   const [params] = useSearchParams();
   // ?redirect= lets a page the donor was bounced from (e.g. checkout) send
@@ -24,21 +24,55 @@ export default function PortalLogin() {
   const [err, setErr]               = useState('');
   const [busy, setBusy]             = useState(false);
 
+  // MFA step-up state
+  const [mfaToken, setMfaToken]       = useState('');
+  const [mfaCode, setMfaCode]         = useState('');
+  const [useRecovery, setUseRecovery] = useState(false);
+
   if (user) { nav(redirectTo); return null; }
+
+  // The portal/admin role check can only run once a real user object comes
+  // back — that happens either straight from login() or, when MFA is
+  // enrolled, only after verifyMfa() succeeds — so both paths funnel here.
+  function afterAuthenticated(u) {
+    if (!u?.roles?.includes('portal') && !u?.roles?.includes('admin')) {
+      setErr('This account does not have portal access.');
+      return;
+    }
+    nav(redirectTo);
+  }
 
   async function submitLogin(e) {
     e.preventDefault();
     setErr(''); setBusy(true);
     try {
-      const u = await login(email, password);
-      if (!u?.roles?.includes('portal') && !u?.roles?.includes('admin')) {
-        setErr('This account does not have portal access.');
-        setBusy(false);
-        return;
+      const result = await login(email, password);
+      if (result?.mfaRequired) {
+        setMfaToken(result.mfaToken);
+        setMfaCode('');
+        setUseRecovery(false);
+        setView('mfa');
+      } else {
+        afterAuthenticated(result);
       }
-      nav(redirectTo);
     } catch (e) {
       setErr(e?.response?.data?.error || e.message);
+    } finally { setBusy(false); }
+  }
+
+  async function submitMfa(e) {
+    e.preventDefault();
+    setErr(''); setBusy(true);
+    try {
+      const u = await verifyMfa(mfaToken, useRecovery ? { recoveryCode: mfaCode } : { code: mfaCode });
+      afterAuthenticated(u);
+    } catch (e) {
+      if (e?.response?.status === 401) {
+        setErr('Your session expired. Please sign in again.');
+        setView('login'); setPassword('');
+      } else {
+        setErr(e?.response?.data?.error || e.message || 'Verification failed');
+      }
     } finally { setBusy(false); }
   }
 
@@ -90,6 +124,52 @@ export default function PortalLogin() {
               <p className="text-center text-muted small mt-3 mb-0">
                 New here? <Link to="/portal/register">Create an account</Link>
               </p>
+            </form>
+          )}
+
+          {/* ── MFA STEP-UP ── */}
+          {view === 'mfa' && (
+            <form onSubmit={submitMfa}>
+              <div className="text-center mb-3">
+                <iconify-icon icon="solar:shield-keyhole-bold-duotone" style={{ fontSize: 40, color: 'var(--secondary)' }}></iconify-icon>
+                <h6 className="mt-2 mb-1">Two-factor verification</h6>
+                <p className="text-muted small mb-0">
+                  {useRecovery ? 'Enter one of your recovery codes.' : 'Enter the 6-digit code from your authenticator app.'}
+                </p>
+              </div>
+              <div className="mb-3">
+                <label className="form-label fw-semibold">{useRecovery ? 'Recovery code' : 'Authentication code'}</label>
+                <input
+                  type="text"
+                  className="form-control text-center"
+                  style={{ letterSpacing: useRecovery ? 'normal' : '0.3em', fontSize: useRecovery ? undefined : '1.25rem' }}
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  inputMode={useRecovery ? 'text' : 'numeric'}
+                  placeholder={useRecovery ? 'XXXX-XXXX-XX' : '123456'}
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                />
+              </div>
+              {err && <div className="alert alert-danger py-2 mb-3">{err}</div>}
+              <button type="submit" className="btn btn-primary w-100 mb-2" disabled={busy || !mfaCode}>
+                {busy ? 'Verifying…' : 'Verify'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-link w-100 text-decoration-none"
+                onClick={() => { setUseRecovery((v) => !v); setMfaCode(''); setErr(''); }}
+              >
+                {useRecovery ? 'Use an authenticator code instead' : "Can't access your authenticator? Use a recovery code"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-link btn-sm w-100 text-decoration-none text-muted"
+                onClick={() => { setView('login'); setPassword(''); setErr(''); }}
+              >
+                Back to sign in
+              </button>
             </form>
           )}
 

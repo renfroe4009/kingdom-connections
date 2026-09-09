@@ -5,10 +5,10 @@ import BrandMark from '../components/BrandMark.jsx';
 import api from '../../api/client.js';
 import { useAdminTheme } from '../../hooks/useAdminTheme.js';
 
-// view: 'login' | 'forgot' | 'forgot_sent'
+// view: 'login' | 'mfa' | 'forgot' | 'forgot_sent'
 export default function Login() {
   useAdminTheme();
-  const { login, user } = useAuth();
+  const { login, verifyMfa, user } = useAuth();
   const nav = useNavigate();
 
   const [view, setView]         = useState('login');
@@ -18,16 +18,47 @@ export default function Login() {
   const [err, setErr]           = useState('');
   const [busy, setBusy]         = useState(false);
 
+  // MFA step-up state
+  const [mfaToken, setMfaToken]   = useState('');
+  const [mfaCode, setMfaCode]     = useState('');
+  const [useRecovery, setUseRecovery] = useState(false);
+
   if (user) { nav('/admin/dashboard'); return null; }
 
   async function submitLogin(e) {
     e.preventDefault();
     setErr(''); setBusy(true);
     try {
-      await login(email, password);
-      nav('/admin/dashboard');
+      const result = await login(email, password);
+      if (result?.mfaRequired) {
+        setMfaToken(result.mfaToken);
+        setMfaCode('');
+        setUseRecovery(false);
+        setView('mfa');
+      } else {
+        nav('/admin/dashboard');
+      }
     } catch (e) {
       setErr(e?.response?.data?.error || e.message || 'Login failed');
+    } finally { setBusy(false); }
+  }
+
+  async function submitMfa(e) {
+    e.preventDefault();
+    setErr(''); setBusy(true);
+    try {
+      await verifyMfa(mfaToken, useRecovery ? { recoveryCode: mfaCode } : { code: mfaCode });
+      nav('/admin/dashboard');
+    } catch (e) {
+      const msg = e?.response?.data?.error || e.message || 'Verification failed';
+      if (e?.response?.status === 401) {
+        // The mfa_token itself expired/invalid — start over rather than
+        // let the caller retry with a dead token.
+        setErr('Your session expired. Please sign in again.');
+        setView('login'); setPassword('');
+      } else {
+        setErr(msg);
+      }
     } finally { setBusy(false); }
   }
 
@@ -93,6 +124,59 @@ export default function Login() {
               {err && <div className="alert alert-danger py-2 mb-3">{err}</div>}
               <button type="submit" className="btn btn-primary w-100" disabled={busy}>
                 {busy ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
+          )}
+
+          {/* ── MFA STEP-UP ── */}
+          {view === 'mfa' && (
+            <form onSubmit={submitMfa}>
+              <div className="text-center mb-3">
+                <iconify-icon
+                  icon="solar:shield-keyhole-bold-duotone"
+                  style={{ fontSize: 40, color: 'var(--secondary)' }}
+                ></iconify-icon>
+                <h6 className="mt-2 mb-1">Two-factor verification</h6>
+                <p className="text-muted small mb-0">
+                  {useRecovery
+                    ? 'Enter one of your recovery codes.'
+                    : 'Enter the 6-digit code from your authenticator app.'}
+                </p>
+              </div>
+              <div className="mb-3">
+                <label className="form-label fw-semibold">
+                  {useRecovery ? 'Recovery code' : 'Authentication code'}
+                </label>
+                <input
+                  type="text"
+                  className="form-control text-center"
+                  style={{ letterSpacing: useRecovery ? 'normal' : '0.3em', fontSize: useRecovery ? undefined : '1.25rem' }}
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  inputMode={useRecovery ? 'text' : 'numeric'}
+                  placeholder={useRecovery ? 'XXXX-XXXX-XX' : '123456'}
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                />
+              </div>
+              {err && <div className="alert alert-danger py-2 mb-3">{err}</div>}
+              <button type="submit" className="btn btn-primary w-100 mb-2" disabled={busy || !mfaCode}>
+                {busy ? 'Verifying…' : 'Verify'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-link w-100 text-decoration-none"
+                onClick={() => { setUseRecovery((v) => !v); setMfaCode(''); setErr(''); }}
+              >
+                {useRecovery ? 'Use an authenticator code instead' : "Can't access your authenticator? Use a recovery code"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-link btn-sm w-100 text-decoration-none text-muted"
+                onClick={() => { setView('login'); setPassword(''); setErr(''); }}
+              >
+                Back to sign in
               </button>
             </form>
           )}
