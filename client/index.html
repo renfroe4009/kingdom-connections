@@ -13,12 +13,30 @@
     <link rel="icon" href="/kingdom-connections/favicon-512.png" sizes="512x512" type="image/png" />
     <link rel="apple-touch-icon" href="/kingdom-connections/favicon-180.png" />
 
-    <!-- NetSimple / Bootstrap admin theme is intentionally NOT loaded here —
-         loading it unconditionally for every route (including the public
-         site and the Puck builder canvas) is what caused the admin theme's
-         CSS to bleed into and override the public site's own styling. It's
-         loaded on-demand instead, only for admin/portal surfaces, via
-         src/hooks/useAdminTheme.js. -->
+    <!-- NetSimple / Bootstrap admin theme is intentionally NOT loaded
+         unconditionally here — doing that for every route (including the
+         public site and the Puck builder canvas) is what caused the admin
+         theme's CSS to bleed into and override the public site's own
+         styling. It's still gated to admin/portal surfaces only, matching
+         src/hooks/useAdminTheme.js's ref-counted mount/unmount — but it's
+         requested synchronously here, before the app boots, rather than
+         from a post-mount useEffect, so the browser blocks first paint on
+         it instead of painting once unstyled and again once the stylesheet
+         arrives (a visible flash on every load and every refresh).
+         useAdminTheme.js finds this same <link id="admin-theme-css">
+         already present and just ref-counts it instead of re-adding it. -->
+    <script>
+      (function () {
+        var p = window.location.pathname;
+        if (/^\/(admin|portal|login|reset-password|invite|pay)(\/|$)/.test(p)) {
+          var link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.id = 'admin-theme-css';
+          link.href = '/vendor/css/styles.css';
+          document.head.appendChild(link);
+        }
+      })();
+    </script>
     <!-- Iconify (Solar icon pack, etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/iconify-icon@1.0.8/dist/iconify-icon.min.js"></script>
   </head>
