@@ -117,6 +117,23 @@ app.use(helmet({
   // allows images/assets to be loaded cross-origin (needed for logo in receipts)
   // while still sending the CORP header so browsers can honour it (Finding 11).
   crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // CORP above governs whether OTHER origins may embed resources FROM this
+  // server — it does nothing for the opposite direction: this server's OWN
+  // HTML (e.g. the public receipt page) loading an image FROM another host.
+  // That's governed by CSP's img-src, which Helmet defaults to 'self' data:
+  // only. resolveBusinessLogoUrl() (services/templates.js) can legitimately
+  // return a cross-origin URL (an S3/R2-hosted logo, or a signed S3 URL for
+  // email) as one of its three valid shapes — same-origin path, data: URI,
+  // or a real external URL — so locking img-src to 'self' data: silently
+  // broke logo rendering for any business whose logo isn't stored as a
+  // same-origin file. Widened to allow https: images generally, matching
+  // the same allowance already given to font-src/style-src below.
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'img-src': ["'self'", 'data:', 'https:'],
+    },
+  },
 }));
 // Browsers send Origin without a trailing slash, so normalise one away here —
 // otherwise a CLIENT_ORIGIN pasted as a full URL silently fails every request.

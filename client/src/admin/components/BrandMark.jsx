@@ -28,7 +28,7 @@ export default function BrandMark({ size = 'md', linkHome = false }) {
   const heights = {
     sm: 55,
     md: 44,
-    lg: 64,
+    lg: 96,
   };
   const h = heights[size] || heights.md;
   const { logoWebUrl } = useTheme();
