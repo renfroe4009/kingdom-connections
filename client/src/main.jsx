@@ -18,6 +18,23 @@ import { ThemeProvider } from './theme/ThemeContext.jsx';
 import { CartProvider } from './frontend/context/CartContext.jsx';
 import './styles.css';
 
+// Admin skin (NetSimple/Tabler, vendor/css/styles.css) — gated to
+// admin/portal/login/invite/pay surfaces only (see useAdminTheme.js and
+// index.html's comment on this). Requested here, synchronously, as the
+// first thing this module does: the bundle's own <link> above is already
+// in the document by the time this runs (module scripts execute after
+// HTML parsing completes), so this lands after it in DOM order and still
+// wins same-specificity cascade ties — while still being added before
+// React's first render/paint, so the browser still blocks first paint on
+// it (no flash of unstyled/wrong-sized content).
+if (/^\/(admin|portal|login|reset-password|invite|pay)(\/|$)/.test(window.location.pathname)) {
+  const adminThemeLink = document.createElement('link');
+  adminThemeLink.rel = 'stylesheet';
+  adminThemeLink.id = 'admin-theme-css';
+  adminThemeLink.href = '/vendor/css/styles.css';
+  document.head.appendChild(adminThemeLink);
+}
+
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>

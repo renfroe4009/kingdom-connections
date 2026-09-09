@@ -17,26 +17,19 @@
          unconditionally here — doing that for every route (including the
          public site and the Puck builder canvas) is what caused the admin
          theme's CSS to bleed into and override the public site's own
-         styling. It's still gated to admin/portal surfaces only, matching
-         src/hooks/useAdminTheme.js's ref-counted mount/unmount — but it's
-         requested synchronously here, before the app boots, rather than
-         from a post-mount useEffect, so the browser blocks first paint on
-         it instead of painting once unstyled and again once the stylesheet
-         arrives (a visible flash on every load and every refresh).
-         useAdminTheme.js finds this same <link id="admin-theme-css">
-         already present and just ref-counts it instead of re-adding it. -->
-    <script>
-      (function () {
-        var p = window.location.pathname;
-        if (/^\/(admin|portal|login|reset-password|invite|pay)(\/|$)/.test(p)) {
-          var link = document.createElement('link');
-          link.rel = 'stylesheet';
-          link.id = 'admin-theme-css';
-          link.href = '/vendor/css/styles.css';
-          document.head.appendChild(link);
-        }
-      })();
-    </script>
+         styling. It's gated to admin/portal surfaces only, matching
+         src/hooks/useAdminTheme.js's ref-counted mount/unmount. It used to
+         be requested from right here via an inline <script>, but Vite's
+         production build always appends its own bundled stylesheet <link>
+         (Bootstrap + FontAwesome + site styles.css) at the very end of
+         <head> regardless of where this tag sits in the source — which put
+         the admin skin BEFORE that bundle in DOM order and let Bootstrap's
+         base styles win same-specificity ties (visibly oversized fonts on
+         admin pages). It's requested from src/main.jsx instead now, as the
+         first thing that runs after the bundle's own <link> is already in
+         the document — still before first paint (so no FOUC), but now
+         after the bundle in DOM order (so the admin skin wins ties again,
+         as it always relied on). -->
     <!-- Iconify (Solar icon pack, etc.) -->
     <script src="https://cdn.jsdelivr.net/npm/iconify-icon@1.0.8/dist/iconify-icon.min.js"></script>
   </head>
