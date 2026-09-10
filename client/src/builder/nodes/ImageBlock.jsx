@@ -25,8 +25,17 @@ export default function ImageBlock({ src, alt, caption, fit, radius, ratio, maxW
   );
 
   const href = resolveHref(link?.url);
-  const body = href && !editing ? (
-    <a href={href} target={link?.newTab ? '_blank' : undefined} rel={link?.newTab ? 'noopener noreferrer' : undefined}>
+  // Keep the <a> in the tree even while editing (just non-navigating) rather
+  // than dropping it: a design's CSS often sizes/frames the image through
+  // its anchor (e.g. `.home-mtn__faces a`), so omitting it here made linked
+  // images render at their natural size in the builder canvas only.
+  const body = href ? (
+    <a
+      href={editing ? undefined : href}
+      target={link?.newTab ? '_blank' : undefined}
+      rel={link?.newTab ? 'noopener noreferrer' : undefined}
+      onClick={editing ? (e) => e.preventDefault() : undefined}
+    >
       {img}
     </a>
   ) : (
@@ -49,12 +58,23 @@ export default function ImageBlock({ src, alt, caption, fit, radius, ratio, maxW
         loading="lazy"
       />
     );
-    // A linked bare image still has to render its anchor. Returning the plain
-    // <img> here dropped the link entirely — imported avatar/logo rows look
-    // correct and navigate nowhere, which is worse than not converting them.
-    // Suppressed while editing so clicking the image selects it in the canvas.
-    return href && !editing
-      ? <a href={href} target={link?.newTab ? '_blank' : undefined} rel={link?.newTab ? 'noopener noreferrer' : undefined}>{bareImg}</a>
+    // A linked bare image still has to render its anchor, and needs to keep
+    // it while editing too: the design's CSS often sizes the image through
+    // that anchor (e.g. `.home-mtn__faces a`), so dropping it in the canvas
+    // left the image at its natural size there even though the live page
+    // (which does render the anchor) looked right. Non-navigating while
+    // editing so clicking the image still selects it in the canvas.
+    return href
+      ? (
+        <a
+          href={editing ? undefined : href}
+          target={link?.newTab ? '_blank' : undefined}
+          rel={link?.newTab ? 'noopener noreferrer' : undefined}
+          onClick={editing ? (e) => e.preventDefault() : undefined}
+        >
+          {bareImg}
+        </a>
+      )
       : bareImg;
   }
 

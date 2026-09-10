@@ -32,6 +32,14 @@ if (/^\/(admin|portal|login|reset-password|invite|pay)(\/|$)/.test(window.locati
   adminThemeLink.rel = 'stylesheet';
   adminThemeLink.id = 'admin-theme-css';
   adminThemeLink.href = '/vendor/css/styles.css';
+  // A <link> inserted via JS is only render-blocking on a best-effort,
+  // timing-dependent basis -- on a cold-cache hard refresh the browser can
+  // still paint React's first frame (e.g. the bare <ul class="nav-tabs">
+  // on Reports pages) before this stylesheet has actually applied. The
+  // `blocking="render"` attribute makes that a real contract instead of a
+  // heuristic (supported in Chromium; harmlessly ignored elsewhere, same
+  // as the previous unblocked behavior).
+  adminThemeLink.setAttribute('blocking', 'render');
   document.head.appendChild(adminThemeLink);
 }
 

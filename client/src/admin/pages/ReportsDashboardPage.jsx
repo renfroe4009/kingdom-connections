@@ -381,11 +381,11 @@ export default function ReportsDashboardPage() {
   const activeTab = tabFromPath(location.pathname);
 
   const tabs = [
-    { key: 'traffic', label: 'Traffic',  path: '/reports/traffic',  icon: 'solar:eye-bold' },
-    { key: 'seo',     label: 'SEO',      path: '/reports/seo',      icon: 'solar:graph-bold' },
-    { key: 'social',  label: 'Social',   path: '/reports/social',   icon: 'solar:share-circle-bold' },
-    { key: 'tax',     label: 'Sales Tax',       path: '/billing/tax-report',    icon: 'solar:receipt-bold' },
-    { key: 'recon',   label: 'Reconciliation',  path: '/billing/reconciliation', icon: 'solar:shield-check-bold' },
+    { key: 'traffic', label: 'Traffic',  path: '/admin/reports/traffic',  icon: 'solar:eye-bold' },
+    { key: 'seo',     label: 'SEO',      path: '/admin/reports/seo',      icon: 'solar:graph-bold' },
+    { key: 'social',  label: 'Social',   path: '/admin/reports/social',   icon: 'solar:share-circle-bold' },
+    { key: 'tax',     label: 'Sales Tax',       path: '/admin/billing/tax-report',    icon: 'solar:receipt-bold' },
+    { key: 'recon',   label: 'Reconciliation',  path: '/admin/billing/reconciliation', icon: 'solar:shield-check-bold' },
   ];
 
   // Handle redirect tabs immediately
