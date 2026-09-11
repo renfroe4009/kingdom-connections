@@ -68,7 +68,9 @@ function tint(hex, opacity = 0.1) {
 
 // ── Apply CSS vars to :root ───────────────────────────────────────────────────
 
-function applyColors(primary, secondary) {
+export const BRAND_CACHE_KEY = 'kc-brand-colors';
+
+export function applyColors(primary, secondary) {
   if (!primary || !primary.startsWith('#')) return;
   const root = document.documentElement;
   const [r, g, b] = hexToRgb(primary);
@@ -130,6 +132,7 @@ export function ThemeProvider({ children }) {
       setSecondaryColor(s);
       setLogoWebUrl(d.logo_web_url || '');
       applyColors(p, s);
+      try { localStorage.setItem(BRAND_CACHE_KEY, JSON.stringify({ primary: p, secondary: s })); } catch { /* private-mode/quota — non-fatal */ }
     } catch { /* network error — keep defaults */ }
   }, []);
 

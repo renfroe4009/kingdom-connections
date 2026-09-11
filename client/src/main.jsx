@@ -14,7 +14,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import App from './App.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
-import { ThemeProvider } from './theme/ThemeContext.jsx';
+import { ThemeProvider, applyColors, BRAND_CACHE_KEY } from './theme/ThemeContext.jsx';
 import { CartProvider } from './frontend/context/CartContext.jsx';
 import './styles.css';
 
@@ -42,6 +42,21 @@ if (/^\/(admin|portal|login|reset-password|invite|pay)(\/|$)/.test(window.locati
   adminThemeLink.setAttribute('blocking', 'render');
   document.head.appendChild(adminThemeLink);
 }
+
+// The org's brand colors (--brand, --secondary, etc., used directly in e.g.
+// Login.jsx's background gradient) only exist once ThemeProvider's mount
+// effect fetches /settings/public/theme -- a network round trip that
+// finishes well after first paint. Until then, every hardcoded fallback in
+// the app (Login.jsx's gradient ends in a gold/orange placeholder) is what
+// actually renders, then visibly snaps to the real colors once the fetch
+// resolves. Applying the last-fetched colors from cache here, before
+// React's first render, means every load after the first one is already
+// correct at first paint -- only a genuinely first-ever visit (nothing
+// cached yet) still shows the placeholder-then-real transition.
+try {
+  const cached = JSON.parse(localStorage.getItem(BRAND_CACHE_KEY));
+  if (cached?.primary) applyColors(cached.primary, cached.secondary);
+} catch { /* no cache yet, or storage unavailable — fall back to defaults */ }
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
