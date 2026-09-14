@@ -201,11 +201,11 @@ export default function DonationCheckout({
       {showPortalToggle && (
         <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
           <button type="button" onClick={() => setPortalMode('saved')}
-            style={{ flex: 1, padding: '0.5rem', borderRadius: 10, border: '1px solid #dde1e7', background: portalMode === 'saved' ? '#0A1F3D' : 'transparent', color: portalMode === 'saved' ? '#fff' : 'inherit', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
+            style={{ flex: 1, padding: '0.5rem', borderRadius: 10, border: '1px solid #dde1e7', background: portalMode === 'saved' ? 'var(--brand-primary, #1f2937)' : 'transparent', color: portalMode === 'saved' ? '#fff' : 'inherit', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
             Saved card
           </button>
           <button type="button" onClick={() => setPortalMode('new')}
-            style={{ flex: 1, padding: '0.5rem', borderRadius: 10, border: '1px solid #dde1e7', background: portalMode === 'new' ? '#0A1F3D' : 'transparent', color: portalMode === 'new' ? '#fff' : 'inherit', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
+            style={{ flex: 1, padding: '0.5rem', borderRadius: 10, border: '1px solid #dde1e7', background: portalMode === 'new' ? 'var(--brand-primary, #1f2937)' : 'transparent', color: portalMode === 'new' ? '#fff' : 'inherit', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
             New card
           </button>
         </div>
@@ -214,7 +214,7 @@ export default function DonationCheckout({
       {showPortalToggle && portalMode === 'saved' ? (
         <div>
           {portalCards.map((p) => (
-            <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.6rem 0.75rem', border: '1px solid #dde1e7', borderRadius: 12, marginBottom: 6, cursor: 'pointer', background: selectedPortalCard?.id === p.id ? 'rgba(10,31,61,0.06)' : 'transparent' }}>
+            <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.6rem 0.75rem', border: '1px solid #dde1e7', borderRadius: 12, marginBottom: 6, cursor: 'pointer', background: selectedPortalCard?.id === p.id ? 'color-mix(in srgb, var(--brand-primary, #1f2937) 6%, transparent)' : 'transparent' }}>
               <input type="radio" name="portal_saved_card" checked={selectedPortalCard?.id === p.id} onChange={() => setSelectedPortalCard(p)} />
               <span style={{ fontSize: '0.9rem' }}>
                 {p.card_brand ? `${p.card_brand.charAt(0).toUpperCase()}${p.card_brand.slice(1)} ` : ''}
@@ -225,7 +225,7 @@ export default function DonationCheckout({
           ))}
           {portalError && <p style={{ color: '#b42318', fontSize: '0.85rem', margin: '0.5rem 0' }}>{portalError}</p>}
           <button type="button" disabled={!selectedPortalCard || portalCharging} onClick={chargeSavedPortalCard}
-            style={{ width: '100%', padding: '0.85rem', borderRadius: 16, border: 'none', background: '#C9A227', color: '#0A1F3D', fontWeight: 700, cursor: 'pointer', opacity: portalCharging ? 0.7 : 1 }}>
+            style={{ width: '100%', padding: '0.85rem', borderRadius: 16, border: 'none', background: 'var(--brand-secondary, #4b5563)', color: 'var(--brand-primary, #ffffff)', fontWeight: 700, cursor: 'pointer', opacity: portalCharging ? 0.7 : 1 }}>
             {portalCharging ? 'Charging…' : `Charge $${Number(checkout?.charge_amount ?? chargeAmount ?? 0).toFixed(2)}`}
           </button>
         </div>

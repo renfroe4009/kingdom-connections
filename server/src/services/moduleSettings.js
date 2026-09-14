@@ -25,6 +25,11 @@ const DEFAULTS = {
     default_currency:      'USD',
     auto_void_days:        null,         // null = never
   },
+  // Storefront order numbers are `${order_prefix}-${year}-NNNNNN` and appear in
+  // the order-confirmation subject line, so the default must stay neutral.
+  shop: {
+    order_prefix:            'ORD',
+  },
   payments: {
     auto_send_receipt:       true,
     receipt_footer:          '',

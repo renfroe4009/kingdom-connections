@@ -139,7 +139,7 @@ export default function PortalInvoiceView() {
                   <hr className="my-2" />
                   <div className="d-flex justify-content-between fs-5"><span>Total</span><strong>{fmt(inv.total)}</strong></div>
                   {Number(inv.amount_paid) > 0 && <div className="d-flex justify-content-between text-success"><span>Paid</span><strong>{fmt(inv.amount_paid)}</strong></div>}
-                  <div className="d-flex justify-content-between fs-5 fw-bolder" style={{ color: paid ? '#198754' : 'var(--brand, #0A1F3D)' }}>
+                  <div className="d-flex justify-content-between fs-5 fw-bolder" style={{ color: paid ? '#198754' : 'var(--brand, #1f2937)' }}>
                     <span>Balance</span><strong>{fmt(inv.balance_due)}</strong>
                   </div>
                 </div>
@@ -190,7 +190,7 @@ export default function PortalInvoiceView() {
                   </p>
                   {!checkout && !starting && (
                     <>
-                      <button className="btn btn-lg w-100" style={{ background: 'var(--secondary, #C9A227)', color: 'var(--brand, #0A1F3D)' }} onClick={startCheckout}>
+                      <button className="btn btn-lg w-100" style={{ background: 'var(--secondary, #4b5563)', color: 'var(--brand, #1f2937)' }} onClick={startCheckout}>
                         <iconify-icon icon="solar:card-line-duotone" class="me-2"></iconify-icon>
                         Pay {fmt(inv.balance_due)}
                       </button>
@@ -210,7 +210,7 @@ export default function PortalInvoiceView() {
                         {savedProfiles !== null && savedProfiles.length === 0 && (
                           <p className="text-muted small text-center mb-0">
                             No saved cards.{' '}
-                            <a href="/portal/payment-methods" className="text-decoration-none" style={{ color: 'var(--brand, #0A1F3D)' }}>Add one</a> to pay faster next time.
+                            <a href="/portal/payment-methods" className="text-decoration-none" style={{ color: 'var(--brand, #1f2937)' }}>Add one</a> to pay faster next time.
                           </p>
                         )}
 
@@ -247,7 +247,7 @@ export default function PortalInvoiceView() {
 
                             <button
                               className="btn btn-sm w-100"
-                              style={{ background: 'var(--secondary, #C9A227)', color: 'var(--brand, #0A1F3D)' }}
+                              style={{ background: 'var(--secondary, #4b5563)', color: 'var(--brand, #1f2937)' }}
                               disabled={savedCardCharging || !selectedProfile}
                               onClick={chargeWithSavedCard}
                             >

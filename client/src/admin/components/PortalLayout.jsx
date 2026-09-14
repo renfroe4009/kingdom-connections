@@ -51,7 +51,7 @@ export default function PortalLayout() {
               <div className="fw-semibold">{user?.first_name} {user?.last_name}</div>
               <small className="text-muted">{user?.email}</small>
             </div>
-            <div className="avatar-initials" style={{ background: 'var(--secondary, #C9A227)', color: 'var(--brand, #0A1F3D)' }}>{initials}</div>
+            <div className="avatar-initials" style={{ background: 'var(--secondary, #4b5563)', color: 'var(--brand, #1f2937)' }}>{initials}</div>
             <button className="btn btn-sm btn-light" onClick={doLogout} title="Sign out">
               <iconify-icon icon="solar:logout-3-line-duotone" class="fs-5"></iconify-icon>
             </button>
@@ -70,8 +70,8 @@ export default function PortalLayout() {
                     (isActive ? ' fw-bold' : ' text-dark')
                   }
                   style={({ isActive }) => ({
-                    borderBottom: isActive ? '3px solid var(--secondary, #C9A227)' : '3px solid transparent',
-                    color: isActive ? 'var(--brand, #0A1F3D)' : undefined,
+                    borderBottom: isActive ? '3px solid var(--secondary, #4b5563)' : '3px solid transparent',
+                    color: isActive ? 'var(--brand, #1f2937)' : undefined,
                     whiteSpace: 'nowrap',
                   })}
                 >

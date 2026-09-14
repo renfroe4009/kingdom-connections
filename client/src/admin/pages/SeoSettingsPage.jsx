@@ -28,6 +28,7 @@ export default function SeoSettingsPage() {
     robots_txt: 'User-agent: *\nAllow: /\n\nSitemap: /api/sitemap-index.xml\n',
     head_scripts: '',
     body_scripts: '',
+    llms_description: '',
   });
   const [loading,     setLoading]     = useState(true);
   const [saving,      setSaving]      = useState(false);
@@ -111,7 +112,7 @@ export default function SeoSettingsPage() {
                       name="site_url"
                       value={form.site_url}
                       onChange={onChange}
-                      placeholder="vcsf.org"
+                      placeholder="example.org"
                     />
                   </div>
                   <div className="form-text">Your root domain, no https:// or trailing slash. Used to build canonical URLs.</div>
@@ -124,8 +125,8 @@ export default function SeoSettingsPage() {
                     value={form.preferred_domain}
                     onChange={onChange}
                   >
-                    <option value="apex">Apex — https://vcsf.org (no www)</option>
-                    <option value="www">WWW — https://www.vcsf.org</option>
+                    <option value="apex">Apex — https://example.org (no www)</option>
+                    <option value="www">WWW — https://www.example.org</option>
                   </select>
                   <div className="form-text">
                     Sets the canonical tag on every public page so Google indexes only your preferred version.
@@ -233,7 +234,7 @@ export default function SeoSettingsPage() {
                     name="gsc_property"
                     value={form.gsc_property}
                     onChange={onChange}
-                    placeholder="sc-domain:vcsf.org  or  https://vcsf.org/"
+                    placeholder="sc-domain:example.org  or  https://example.org/"
                   />
                   <div className="form-text">
                     Exact property string from Search Console — either a domain property (<code>sc-domain:example.com</code>) or a URL-prefix property (<code>https://www.example.com/</code>).
@@ -361,6 +362,35 @@ export default function SeoSettingsPage() {
                   <div className="form-text">
                     Injected at the start of <code>&lt;body&gt;</code> on every public page. Used for the GTM <code>&lt;noscript&gt;</code> fallback.
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── AI search description (llms.txt) ── */}
+          <div className="col-12">
+            <div className="card">
+              <div className="card-header d-flex align-items-center gap-2 fw-semibold">
+                <iconify-icon icon="solar:magic-stick-3-bold" class="fs-5"></iconify-icon>
+                AI Search Description
+                <span className="badge bg-secondary-subtle text-secondary ms-auto fs-1">
+                  Served at /api/seo/llms.txt
+                </span>
+              </div>
+              <div className="card-body">
+                <label className="form-label fw-medium" htmlFor="llms_description">Organisation description</label>
+                <textarea
+                  id="llms_description"
+                  className="form-control"
+                  name="llms_description"
+                  rows={3}
+                  value={form.llms_description}
+                  onChange={onChange}
+                  placeholder="One or two sentences on who you are and what you do — written the way you'd want an AI assistant to describe you."
+                />
+                <div className="form-text">
+                  AI search engines (ChatGPT, Claude, Perplexity) read this to learn who your organisation is. The name comes from Business Settings. Leave blank to use your site's footer description.{' '}
+                  <a href="/api/seo/llms.txt" target="_blank" rel="noopener noreferrer">View current llms.txt</a>
                 </div>
               </div>
             </div>

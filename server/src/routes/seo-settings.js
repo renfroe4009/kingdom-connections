@@ -46,6 +46,10 @@ const DEFAULTS = {
   ].join('\n'),
   head_scripts: '',
   body_scripts: '',
+  // One-paragraph summary served as the blockquote in /llms.txt — what AI
+  // search engines read to learn who this organisation is. Blank falls back
+  // to the site's own footer blurb / home page description (see /llms.txt).
+  llms_description: '',
 };
 
 function readSettings() {
@@ -97,16 +101,49 @@ router.get('/sitemap-index.xml', (req, res) => {
 
 // GET /api/seo/llms.txt — machine-readable site description for AI crawlers
 // See: https://llmstxt.org
+//
+// Every line is derived from this install's own data. It must never carry a
+// hardcoded organisation name or description: this file is how AI search
+// engines learn who the site belongs to, and a hardcoded fallback previously
+// served a former client's name, mission and federal tax ID here on a
+// different client's domain. If nothing is configured, say less, not
+// something borrowed.
 router.get('/llms.txt', async (_req, res) => {
-  const s       = readSettings();
+  const s = readSettings();
+  const { db } = require('../db');
+
+  // Identity comes from Business Settings; the description from the SEO
+  // setting, then the site's own footer blurb, then the home page's meta
+  // description — the first one an admin has actually filled in.
+  let orgName = '';
+  let description = String(s.llms_description || '').trim();
+  let fallbackSiteUrl = '';
+  try {
+    const [[biz]] = await db.query('SELECT business_name, website FROM business_settings WHERE id = 1');
+    orgName = String(biz?.business_name || '').trim();
+    fallbackSiteUrl = String(biz?.website || '').trim().replace(/\/+$/, '');
+    if (fallbackSiteUrl && !/^https?:\/\//i.test(fallbackSiteUrl)) fallbackSiteUrl = `https://${fallbackSiteUrl}`;
+    if (!description) {
+      const [[blurb]] = await db.query(
+        "SELECT setting_value FROM website_global_settings WHERE setting_key = 'footer_blurb'"
+      );
+      description = String(blurb?.setting_value || '').trim();
+    }
+    if (!description) {
+      const [[home]] = await db.query(
+        "SELECT meta_desc FROM website_pages WHERE slug = 'home' AND status = 'published' LIMIT 1"
+      );
+      description = String(home?.meta_desc || '').trim();
+    }
+  } catch (_) { /* serve whatever resolved — never a hardcoded identity */ }
+
   const siteUrl = s.site_url
     ? `https://${s.preferred_domain === 'www' ? 'www.' : ''}${s.site_url}`
-    : '';
+    : fallbackSiteUrl;
 
   // Dynamically pull published pages from DB for the links section
   let pageLinks = '';
   try {
-    const { db } = require('../db');
     const [pages] = await db.query(
       "SELECT title, slug, meta_desc FROM website_pages WHERE status = 'published' ORDER BY title ASC LIMIT 30"
     );
@@ -129,15 +166,14 @@ router.get('/llms.txt', async (_req, res) => {
     }
   } catch (_) {}
 
+  // The llmstxt.org format requires an H1; with no configured name, the site's
+  // own host is the only truthful identity available.
+  const heading = orgName || siteUrl.replace(/^https?:\/\//i, '') || 'Website';
+
   const txt = [
-    `# ${s.site_name || "Ventura County Sheriff's Foundation"}`,
-    '',
-    `> The Ventura County Sheriff's Foundation (VCSF) is an independent 501(c)(3) nonprofit (Tax ID #20-3780163), based in Camarillo, CA. Since 2005, we've built community partnerships to enhance public safety and support the Ventura County Sheriff's Office.`,
-    '',
-    `## About`,
-    `VCSF funds the Ventura County Sheriff's Office directly — grants for equipment and technology, the Sgt. Ron Helus Training Facility, Shop with a Cop, Coppers and Choppers, and the Grossman Scholarship for deputy families. 100% of proceeds support Ventura County deputies and community programs.`,
-    '',
-    siteUrl ? `## Website\n${siteUrl}` : '',
+    `# ${heading}`,
+    description ? `\n> ${description.replace(/\s*\n\s*/g, ' ')}` : '',
+    siteUrl ? `\n## Website\n${siteUrl}` : '',
     siteUrl ? `\n## Sitemap\n${siteUrl}/sitemap.xml` : '',
     pageLinks,
   ].filter(Boolean).join('\n');
@@ -189,6 +225,7 @@ router.put('/settings', requirePermission('settings.manage'), (req, res) => {
     'robots_txt',
     'head_scripts',
     'body_scripts',
+    'llms_description',
   ];
   const next = { ...current };
   allowed.forEach((k) => {

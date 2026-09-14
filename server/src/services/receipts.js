@@ -10,6 +10,7 @@ const { resolveBusinessLogoUrl, renderBySlug, classifyPayment } = require('./tem
 const { sendMail } = require('./mailer');
 const moduleSettings = require('./moduleSettings');
 const { isSafeTargetUrl } = require('./urlSafety');
+const { NEUTRAL, withFallback } = require('./brandColors');
 
 // --------- brand (business_settings + Media Library) ---------
 //
@@ -37,8 +38,10 @@ async function resolveBusinessBranding() {
     name: biz?.business_name || '',
     taxEin: biz?.tax_ein || '',
     logoUrl,
-    primaryColor: biz?.primary_color || '#0A1F3D',
-    secondaryColor: biz?.secondary_color || '#C9A227',
+    // Neutral fallbacks (services/brandColors.js) — these used to be a
+    // previous client's navy/gold and printed on receipts and tax statements.
+    primaryColor: withFallback(biz?.primary_color, NEUTRAL.primary),
+    secondaryColor: withFallback(biz?.secondary_color, NEUTRAL.secondary),
   };
 }
 
@@ -139,7 +142,10 @@ async function loadReceiptDataInternal(where, params) {
   const branding = await resolveBusinessBranding();
   let company = {
     name: branding.name || 'Our Organization',
-    from_email: 'noreply@example.org',
+    // Blank unless an SMTP sender is configured below. The renderers already
+    // omit the contact line when this is empty; a placeholder address here
+    // would print on the customer's receipt.
+    from_email: '',
     tax_ein: branding.taxEin,
     logo_url: branding.logoUrl,
     logo_buffer: await logoUrlToBuffer(branding.logoUrl),
@@ -279,7 +285,7 @@ function renderReceiptHtml({ payment, lines, company }) {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Receipt ${receiptNo}</title>
 <style>
-  :root { --brand: ${company.primary_color || '#0A1F3D'}; --ink: #212529; --muted: #6c757d; --line: #e5e7eb; }
+  :root { --brand: ${withFallback(company.primary_color, NEUTRAL.primary)}; --ink: #212529; --muted: #6c757d; --line: #e5e7eb; }
   * { box-sizing: border-box; }
   /* print-color-adjust forces backgrounds (state pill, brand bar) to render in
      "Save as PDF" — without it Chrome/Safari strip them by default. */
@@ -433,7 +439,7 @@ async function renderReceiptPdf({ payment, lines, company }) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const brand = company.primary_color || '#0A1F3D';
+    const brand = withFallback(company.primary_color, NEUTRAL.primary);
     const ink = '#212529';
     const muted = '#6c757d';
     const receiptNo = `RCPT-${String(payment.id).padStart(6, '0')}`;
@@ -659,7 +665,10 @@ async function loadYearEndStatementData(contactId, year) {
   const branding = await resolveBusinessBranding();
   let company = {
     name: branding.name || 'Our Organization',
-    from_email: 'noreply@example.org',
+    // Blank unless an SMTP sender is configured below. The renderers already
+    // omit the contact line when this is empty; a placeholder address here
+    // would print on the customer's receipt.
+    from_email: '',
     tax_ein: branding.taxEin,
     logo_url: branding.logoUrl,
     logo_buffer: await logoUrlToBuffer(branding.logoUrl),
@@ -686,7 +695,7 @@ function renderYearEndStatementPdf({ contact, year, gifts, totalGiven, totalDedu
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const brand = company.primary_color || '#0A1F3D';
+    const brand = withFallback(company.primary_color, NEUTRAL.primary);
     const ink = '#212529';
     const muted = '#6c757d';
     const leftX = 48;

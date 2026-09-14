@@ -668,7 +668,7 @@ export default function SettingsPage() {
               <label className="form-label">Authorization disclosure (shown next to the payment form)</label>
               <textarea className="form-control form-control-sm" rows="2" value={valor.ach_authorization_text || ''}
                 onChange={(e) => setValor({ ...valor, ach_authorization_text: e.target.value })}
-                placeholder="By providing your bank account information, you authorize Ventura County Sheriff's Foundation to debit your account for the amount indicated. This authorization remains in effect until you notify us otherwise." />
+                placeholder="By providing your bank account information, you authorize [your organization's name] to debit your account for the amount indicated. This authorization remains in effect until you notify us otherwise." />
             </div>
 
             <div className="alert alert-light small">

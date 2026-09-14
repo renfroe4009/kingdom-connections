@@ -43,7 +43,7 @@ export default function PortalDashboard() {
           <div className="card h-100">
             <div className="card-body">
               <small className="text-muted text-uppercase fw-bold">Total Given</small>
-              <div className="fs-2 fw-bolder" style={{ color: 'var(--brand, #0A1F3D)' }}>{fmt(donations.total)}</div>
+              <div className="fs-2 fw-bolder" style={{ color: 'var(--brand, #1f2937)' }}>{fmt(donations.total)}</div>
               <div className="small text-muted">{fmt(givenThisYear)} this year</div>
               <Link to="/portal/giving" className="small">View giving history →</Link>
             </div>

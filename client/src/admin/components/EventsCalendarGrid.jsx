@@ -65,7 +65,7 @@ export default function EventsCalendarGrid({ year, month, events, onDayClick, on
                   key={e.id}
                   onClick={(ev) => { ev.stopPropagation(); onEventClick?.(e); }}
                   className="small text-truncate rounded px-1 mb-1"
-                  style={{ background: 'var(--secondary, #C9A227)', color: '#fff', cursor: 'pointer' }}
+                  style={{ background: 'var(--secondary, #4b5563)', color: '#fff', cursor: 'pointer' }}
                   title={e.name}
                 >
                   {e.name}

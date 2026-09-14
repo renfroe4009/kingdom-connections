@@ -154,7 +154,7 @@ function AuthnetCardSaveForm({ loginId, clientKey, mode, onSaved, onCancel }) {
       {tokenized && (
         <div className="d-flex align-items-center justify-content-between border rounded px-3 py-2 mb-3 bg-light">
           <div className="d-flex align-items-center gap-2">
-            <iconify-icon icon="solar:card-line-duotone" style={{ fontSize: 20, color: 'var(--secondary, #C9A227)' }}></iconify-icon>
+            <iconify-icon icon="solar:card-line-duotone" style={{ fontSize: 20, color: 'var(--secondary, #4b5563)' }}></iconify-icon>
             <span className="fw-semibold small">
               {tokenized.brand ? `${tokenized.brand.charAt(0).toUpperCase()}${tokenized.brand.slice(1)} ` : ''}
               **** {tokenized.last4}
@@ -184,7 +184,7 @@ function AuthnetCardSaveForm({ loginId, clientKey, mode, onSaved, onCancel }) {
       <div className="d-flex gap-2 mt-3">
         {tokenized && (
           <button className="btn btn-primary" disabled={saving} onClick={handleSave}
-            style={{ background: 'var(--secondary, #C9A227)', borderColor: 'var(--secondary, #C9A227)', color: 'var(--brand, #0A1F3D)' }}>
+            style={{ background: 'var(--secondary, #4b5563)', borderColor: 'var(--secondary, #4b5563)', color: 'var(--brand, #1f2937)' }}>
             {saving ? <><span className="spinner-border spinner-border-sm me-2"></span>Saving…</> : 'Save card'}
           </button>
         )}
@@ -369,7 +369,7 @@ function PassageCardSaveForm({ onSaved, onCancel }) {
         <>
           <div className="d-flex align-items-center justify-content-between border rounded px-3 py-2 mb-3 bg-light">
             <div className="d-flex align-items-center gap-2">
-              <iconify-icon icon="solar:card-line-duotone" style={{ fontSize: 20, color: 'var(--secondary, #C9A227)' }}></iconify-icon>
+              <iconify-icon icon="solar:card-line-duotone" style={{ fontSize: 20, color: 'var(--secondary, #4b5563)' }}></iconify-icon>
               <span className="fw-semibold small">
                 {tokenData.card_brand ? `${tokenData.card_brand.charAt(0).toUpperCase()}${tokenData.card_brand.slice(1)} ` : ''}
                 **** {tokenData.last4}
@@ -415,7 +415,7 @@ function PassageCardSaveForm({ onSaved, onCancel }) {
             className="btn btn-primary"
             disabled={saving}
             onClick={handleSave}
-            style={{ background: 'var(--secondary, #C9A227)', borderColor: 'var(--secondary, #C9A227)', color: 'var(--brand, #0A1F3D)' }}
+            style={{ background: 'var(--secondary, #4b5563)', borderColor: 'var(--secondary, #4b5563)', color: 'var(--brand, #1f2937)' }}
           >
             {saving ? <><span className="spinner-border spinner-border-sm me-2"></span>Saving…</> : 'Save card'}
           </button>
@@ -490,7 +490,7 @@ export default function PortalPaymentMethods() {
         {!showAdd && (
           <button
             className="btn btn-sm"
-            style={{ background: 'var(--secondary, #C9A227)', color: 'var(--brand, #0A1F3D)' }}
+            style={{ background: 'var(--secondary, #4b5563)', color: 'var(--brand, #1f2937)' }}
             onClick={() => { setShowAdd(true); setActionError(''); }}
           >
             <iconify-icon icon="solar:add-square-line-duotone" class="me-1"></iconify-icon>
@@ -542,7 +542,7 @@ export default function PortalPaymentMethods() {
             </p>
             <button
               className="btn"
-              style={{ background: 'var(--secondary, #C9A227)', color: 'var(--brand, #0A1F3D)' }}
+              style={{ background: 'var(--secondary, #4b5563)', color: 'var(--brand, #1f2937)' }}
               onClick={() => setShowAdd(true)}
             >
               <iconify-icon icon="solar:add-square-line-duotone" class="me-1"></iconify-icon>
@@ -565,7 +565,7 @@ export default function PortalPaymentMethods() {
                     className="rounded-2 d-flex align-items-center justify-content-center"
                     style={{ width: 44, height: 44, background: '#F7F0EB', fontSize: 22 }}
                   >
-                    <iconify-icon icon="solar:card-line-duotone" style={{ color: 'var(--secondary, #C9A227)' }}></iconify-icon>
+                    <iconify-icon icon="solar:card-line-duotone" style={{ color: 'var(--secondary, #4b5563)' }}></iconify-icon>
                   </div>
                   <div>
                     <div className="fw-semibold">

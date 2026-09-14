@@ -4,8 +4,8 @@ import { useTheme } from '../../theme/ThemeContext.jsx';
 // =============================================================================
 // BrandMark — shared brand lockup used across layouts, login, portal, and the
 // public pay page. Renders the business's uploaded "web" logo (Settings →
-// Business, sourced from the Media Library), falling back to the static VCSF
-// asset if none has been uploaded.
+// Business, sourced from the Media Library), falling back to the static logo
+// bundled at FALLBACK_LOGO below if none has been uploaded.
 //
 // Sizes: "sm" (sidebar), "md" (portal header / pay page), "lg" (auth cards).
 // `showTagline` is kept for prop-API compatibility with existing callers;
