@@ -9,6 +9,9 @@ const { z } = require('zod');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { render, buildContext, renderBySlug, MERGE_FIELDS } = require('../services/templates');
+// Templates that carry account credentials (password reset, invites, portal
+// sign-in) are admin-only to edit — see services/credentialTemplates.js.
+const { isCredentialTemplateId, credentialTemplateWriteError } = require('../services/credentialTemplates');
 
 router.use(requireAuth);
 
@@ -93,6 +96,8 @@ const saveSchema = z.object({
 router.post('/', requirePermission('comms.templates.manage'), async (req, res, next) => {
   try {
     const d = saveSchema.parse(req.body);
+    const denied = credentialTemplateWriteError({ user: req.user, action: 'create', requestedSlug: d.slug });
+    if (denied) return res.status(denied.status).json({ error: denied.error });
     const [ins] = await db.query(
       `INSERT INTO message_templates
         (channel, name, slug, category, subject, body, merge_fields, is_active, created_by)
@@ -121,6 +126,16 @@ router.put('/:id', requirePermission('comms.templates.manage'), async (req, res,
     if (!existing) return res.status(404).json({ error: 'Template not found' });
 
     const d = saveSchema.parse(req.body);
+    // Keyed on the row's slug as the DATABASE compares it, not on is_system:
+    // a row created with an equivalent slug before the seeder ran is adopted
+    // by it without becoming is_system, and renderBySlug() would still use it.
+    const denied = credentialTemplateWriteError({
+      user: req.user,
+      action: 'update',
+      targetIsCredential: await isCredentialTemplateId(db, req.params.id),
+      requestedSlug: existing.is_system ? undefined : d.slug,
+    });
+    if (denied) return res.status(denied.status).json({ error: denied.error });
 
     if (existing.is_system) {
       // System templates: only subject, body, and is_active are editable
@@ -174,6 +189,12 @@ router.delete('/:id', requirePermission('comms.templates.manage'), async (req, r
     if (existing.is_system) {
       return res.status(422).json({ error: 'System templates cannot be deleted. You may disable them instead.' });
     }
+    const denied = credentialTemplateWriteError({
+      user: req.user,
+      action: 'delete',
+      targetIsCredential: await isCredentialTemplateId(db, req.params.id),
+    });
+    if (denied) return res.status(denied.status).json({ error: denied.error });
     await db.query('DELETE FROM message_templates WHERE id = :id', { id: req.params.id });
     res.json({ ok: true });
   } catch (err) { next(err); }

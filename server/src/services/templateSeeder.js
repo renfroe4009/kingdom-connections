@@ -653,8 +653,14 @@ ${helpLine()}
   // logo, colours and footer like every other system email. The recipient
   // isn't necessarily a CRM contact, so the route passes contact.first_name /
   // contact.email and reset.url through renderBySlug()'s `extra` argument.
+  //
+  // Editing is admin-only (services/credentialTemplates.js) because the body
+  // carries the reset link. Version 2 exists only so the first deploy of that
+  // lock re-applies this canonical body: a local server running unreleased
+  // code seeded v1 into the shared database early, where production's
+  // unguarded templates route could still edit it before the lock shipped.
   {
-    version: 1,
+    version: 2,
     slug:     'password_reset',
     name:     'Password Reset',
     category: 'System',
