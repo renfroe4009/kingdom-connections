@@ -169,7 +169,7 @@ export default function PassagePaymentForm({
           {fmtAmount && (
             <div className="mb-3 p-3 bg-light rounded d-flex justify-content-between align-items-center">
               <span className="small text-muted fw-semibold">Amount to charge</span>
-              <span className="fs-5 fw-bolder" style={{ color: '#F05523' }}>{fmtAmount}</span>
+              <span className="fs-5 fw-bolder" style={{ color: 'var(--brand, #1f2937)' }}>{fmtAmount}</span>
             </div>
           )}
 

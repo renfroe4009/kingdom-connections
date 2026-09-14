@@ -22,6 +22,7 @@ const { db } = require('../db');
 const { getDefaultGateway, valorGetClientToken, valorVaultCharge, valorAchCharge, mapValorVaultChargeResponse } = require('../services/gateways');
 const { sendMail } = require('../services/mailer');
 const moduleSettings = require('../services/moduleSettings');
+const { getBrandColors } = require('../services/brandColors');
 const { computeTicketAvailable } = require('./cart');
 const { createTicketsForRegistration } = require('../services/eventTickets');
 const { requireAuth } = require('../middleware/auth');
@@ -45,6 +46,9 @@ async function sendOrderConfirmationEmail({ email, name, order_number, items, su
   ).join('');
   const clientBase = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
   const registerUrl = `${clientBase}/portal/register?email=${encodeURIComponent(email)}`;
+  // Primary, not secondary: the secondary is usually the light accent (this
+  // client's is a bright yellow) and is unreadable as link text on white.
+  const { primary: linkColor } = await getBrandColors();
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
       <h2>Thank you, ${name}!</h2>
@@ -58,7 +62,7 @@ async function sendOrderConfirmationEmail({ email, name, order_number, items, su
       </table>
       <p style="font-size:0.85rem;color:#555;text-align:center;margin-top:1.5rem">
         Want to track this order alongside your full history?
-        <a href="${registerUrl}" style="color:#C9A227;font-weight:600;text-decoration:underline">Create your free account &rarr;</a>
+        <a href="${registerUrl}" style="color:${linkColor};font-weight:600;text-decoration:underline">Create your free account &rarr;</a>
       </p>
     </div>`;
   try {
@@ -66,9 +70,15 @@ async function sendOrderConfirmationEmail({ email, name, order_number, items, su
   } catch (_e) { /* non-fatal — order already succeeded */ }
 }
 
+// The prefix lands in the customer's order-confirmation subject line, so it is
+// configurable (module setting `shop.order_prefix`, default ORD) rather than
+// hardcoded — it used to carry a previous client's initials. Same pattern as
+// nextInvoiceNumber() below.
 async function nextOrderNumber() {
+  const cfg = await moduleSettings.get('shop');
+  const pfx = (String(cfg.order_prefix || '').trim() || 'ORD').toUpperCase();
   const year = new Date().getUTCFullYear();
-  const prefix = `VCSF-${year}-`;
+  const prefix = `${pfx}-${year}-`;
   const [rows] = await db.query(
     'SELECT order_number FROM orders WHERE order_number LIKE :p ORDER BY id DESC LIMIT 1',
     { p: `${prefix}%` }

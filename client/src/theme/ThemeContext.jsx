@@ -103,16 +103,19 @@ export function applyColors(primary, secondary) {
 const ThemeContext = createContext({
   theme: 'light',
   toggleTheme: () => {},
-  primaryColor: '#F05523',
-  secondaryColor: '#1A1A1A',
+  // Neutral, matching the server's fallback (server/src/services/brandColors.js)
+  // — this theme also paints the donor portal, which must never default to
+  // another brand's colours.
+  primaryColor: '#1f2937',
+  secondaryColor: '#4b5563',
   logoWebUrl: '',
   refreshTheme: () => {},
 });
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('crm-theme') || 'light');
-  const [primaryColor,   setPrimaryColor]   = useState('#F05523');
-  const [secondaryColor, setSecondaryColor] = useState('#1A1A1A');
+  const [primaryColor,   setPrimaryColor]   = useState('#1f2937');
+  const [secondaryColor, setSecondaryColor] = useState('#4b5563');
   const [logoWebUrl,     setLogoWebUrl]     = useState('');
 
   // Apply dark/light to <html>
@@ -126,8 +129,8 @@ export function ThemeProvider({ children }) {
       const r = await fetch(`${API_BASE}/settings/public/theme`);
       if (!r.ok) return;
       const d = await r.json();
-      const p = d.primary_color   || '#F05523';
-      const s = d.secondary_color || '#1A1A1A';
+      const p = d.primary_color   || '#1f2937';
+      const s = d.secondary_color || '#4b5563';
       setPrimaryColor(p);
       setSecondaryColor(s);
       setLogoWebUrl(d.logo_web_url || '');

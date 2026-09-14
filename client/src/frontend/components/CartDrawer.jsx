@@ -27,7 +27,7 @@ export default function CartDrawer() {
       footer={cart.items.length > 0 && (
         <button
           className="btn btn-primary w-100"
-          style={{ background: 'var(--brand-primary, #0A1F3D)', color: '#ffffff', border: 'none', fontWeight: 600, padding: '0.75rem', borderRadius: 16 }}
+          style={{ background: 'var(--brand-primary, #1f2937)', color: '#ffffff', border: 'none', fontWeight: 600, padding: '0.75rem', borderRadius: 16 }}
           onClick={goToCheckout}
         >
           Proceed to Checkout

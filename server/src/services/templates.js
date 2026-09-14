@@ -15,6 +15,7 @@
 // =============================================================================
 const { db }    = require('../db');
 const storage   = require('./storage');
+const { NEUTRAL, withFallback } = require('./brandColors');
 
 // ── Logo embedding ─────────────────────────────────────────────────────────
 // Email clients (Outlook, Gmail app, Apple Mail) can only load images from
@@ -125,21 +126,27 @@ async function buildContext({ contact_id, deal_id, organization_id, user_id, inv
        FROM business_settings WHERE id = 1`
   );
   if (biz) {
+    // Trimmed: every system template's footer is literally
+    // "{{business.address}} {{business.city}}, {{business.state}} {{business.zip}}",
+    // so a stray trailing space in a settings field renders as "Phoenix , AZ".
+    const t = (v) => (typeof v === 'string' ? v.trim() : (v ?? ''));
     ctx.business = {
-      name:            biz.business_name || 'Our Company',
+      name:            t(biz.business_name) || 'Our Company',
       // Embed logo at send-time so external email clients can render it
       // (the /api/settings/business/logo endpoint is not reachable from the web).
       logo_url:        await resolveBusinessLogoUrl(biz),
-      primary_color:   biz.primary_color  || '#0A1F3D',
-      secondary_color: biz.secondary_color || '#C9A227',
-      address:         biz.address  || '',
-      city:            biz.city     || '',
-      state:           biz.state    || '',
-      zip:             biz.zip      || '',
-      phone:           biz.phone    || '',
-      email:           biz.email    || '',
-      website:         biz.website  || '',
-      tax_ein:         biz.tax_ein  || '',
+      // Neutral fallbacks (services/brandColors.js) — never a specific client's
+      // palette, which is what these used to be.
+      primary_color:   withFallback(biz.primary_color, NEUTRAL.primary),
+      secondary_color: withFallback(biz.secondary_color, NEUTRAL.secondary),
+      address:         t(biz.address),
+      city:            t(biz.city),
+      state:           t(biz.state),
+      zip:             t(biz.zip),
+      phone:           t(biz.phone),
+      email:           t(biz.email),
+      website:         t(biz.website),
+      tax_ein:         t(biz.tax_ein),
     };
   }
 

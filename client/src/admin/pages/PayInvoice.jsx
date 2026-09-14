@@ -456,7 +456,7 @@ export default function PayInvoice() {
                   </div>
                   <div className="text-end">
                     <div className="small text-muted">Amount due</div>
-                    <div className="fs-3 fw-bolder" style={{ color: 'var(--brand, #0A1F3D)' }}>{fmt(inv.balance_due)}</div>
+                    <div className="fs-3 fw-bolder" style={{ color: 'var(--brand, #1f2937)' }}>{fmt(inv.balance_due)}</div>
                   </div>
                 </div>
 
@@ -505,7 +505,7 @@ export default function PayInvoice() {
                     {Number(inv.amount_paid) > 0 && (
                       <div className="d-flex justify-content-between text-success"><span>Paid</span><strong>{fmt(inv.amount_paid)}</strong></div>
                     )}
-                    <div className="d-flex justify-content-between fs-5 fw-bolder" style={{ color: paid ? '#198754' : 'var(--brand, #0A1F3D)' }}>
+                    <div className="d-flex justify-content-between fs-5 fw-bolder" style={{ color: paid ? '#198754' : 'var(--brand, #1f2937)' }}>
                       <span>Balance Due</span><strong>{fmt(inv.balance_due)}</strong>
                     </div>
                   </div>
@@ -561,7 +561,7 @@ export default function PayInvoice() {
                     </p>
 
                     {!checkout && !starting && (
-                      <button className="btn btn-lg w-100" style={{ background: 'var(--secondary, #C9A227)', color: 'var(--brand, #0A1F3D)' }} onClick={startCheckout}>
+                      <button className="btn btn-lg w-100" style={{ background: 'var(--secondary, #4b5563)', color: 'var(--brand, #1f2937)' }} onClick={startCheckout}>
                         <iconify-icon icon="solar:card-line-duotone" class="me-2"></iconify-icon>
                         Pay {fmt(inv.balance_due)}
                       </button>

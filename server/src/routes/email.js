@@ -153,9 +153,9 @@ router.post('/test', requirePermission('settings.manage'), async (req, res, next
     const d = testSchema.parse(req.body);
     await sendMail({
       to: d.to,
-      subject: 'localCRM SMTP test',
-      text: 'This is a test message from your localCRM SMTP configuration. If you received it, things are wired up correctly.',
-      html: '<p>This is a test message from your localCRM SMTP configuration.</p><p>If you received it, things are wired up correctly.</p>',
+      subject: 'SMTP test message',
+      text: 'This is a test message from your SMTP configuration. If you received it, things are wired up correctly.',
+      html: '<p>This is a test message from your SMTP configuration.</p><p>If you received it, things are wired up correctly.</p>',
       userId: req.user.id,
     });
     res.json({ ok: true });

@@ -25,6 +25,7 @@
 // =============================================================================
 
 const { db } = require('../db');
+const { getBrandColors } = require('./brandColors');
 const { decrypt, looksEncrypted } = require('./secretsCrypto');
 
 // --------- settings access ---------
@@ -261,7 +262,7 @@ async function authnetCreateHostedToken(cfg, { invoice, lineItems, org, returnUr
           { settingName: 'hostedPaymentButtonOptions',
             settingValue: JSON.stringify({ text: 'Pay Now' }) },
           { settingName: 'hostedPaymentStyleOptions',
-            settingValue: JSON.stringify({ bgColor: '#F05523' }) },
+            settingValue: JSON.stringify({ bgColor: (await getBrandColors()).primary }) },
           { settingName: 'hostedPaymentPaymentOptions',
             settingValue: JSON.stringify({ cardCodeRequired: true, showCreditCard: true, showBankAccount: true }) },
           { settingName: 'hostedPaymentSecurityOptions',

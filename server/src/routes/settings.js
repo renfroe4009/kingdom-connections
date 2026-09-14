@@ -8,6 +8,7 @@ const { db } = require('../db');
 const { requireAuth, requirePermission, requirePermissionNoMfaGate } = require('../middleware/auth');
 const multer = require('multer');
 const storage = require('../services/storage');
+const { NEUTRAL, withFallback } = require('../services/brandColors');
 
 const logoUpload = multer({
   storage: multer.memoryStorage(),
@@ -24,9 +25,11 @@ router.get('/public/theme', async (_req, res, next) => {
     const [[row]] = await db.query(
       'SELECT primary_color, secondary_color, logo_web_url FROM business_settings WHERE id = 1'
     );
+    // Neutral fallbacks (services/brandColors.js) — this feeds the admin and
+    // donor-portal theme, which must never default to another brand.
     res.json({
-      primary_color:   row?.primary_color   || '#F05523',
-      secondary_color: row?.secondary_color || '#1A1A1A',
+      primary_color:   withFallback(row?.primary_color, NEUTRAL.primary),
+      secondary_color: withFallback(row?.secondary_color, NEUTRAL.secondary),
       logo_web_url:    row?.logo_web_url    || '',
     });
   } catch (err) { next(err); }
@@ -133,7 +136,7 @@ router.get('/business', requirePermission('settings.manage'), async (_req, res, 
       return res.json({
         business_name: '', address: '', city: '', state: '', zip: '', country: '',
         phone: '', email: '', website: '',
-        primary_color: '#F05523', secondary_color: '#1A1A1A',
+        primary_color: NEUTRAL.primary, secondary_color: NEUTRAL.secondary,
         logo_web_url: '', logo_print_url: '',
         alert_emails: [],
       });
@@ -190,8 +193,10 @@ router.put('/business', requirePermission('settings.manage'), async (req, res, n
         phone:            b.phone            || '',
         email:            b.email            || '',
         website:          b.website          || '',
-        primary_color:    b.primary_color    || '#F05523',
-        secondary_color:  b.secondary_color  || '#1A1A1A',
+        // A cleared colour saves as the neutral palette, not the boilerplate
+        // orange — this value flows into every email, receipt and PDF.
+        primary_color:    withFallback(b.primary_color, NEUTRAL.primary),
+        secondary_color:  withFallback(b.secondary_color, NEUTRAL.secondary),
         logo_web_url:     b.logo_web_url     || '',
         logo_print_url:   b.logo_print_url   || '',
         alert_emails:     JSON.stringify(alert_emails),
@@ -279,7 +284,7 @@ router.delete('/business/logo/:slot', requirePermission('settings.manage'), asyn
 
 // -------- Module settings --------
 const moduleSettings = require('../services/moduleSettings');
-const VALID_MODULES  = new Set(['invoices', 'payments', 'contacts', 'organizations', 'deals', 'tasks', 'subscriptions', 'security']);
+const VALID_MODULES  = new Set(['invoices', 'payments', 'contacts', 'organizations', 'deals', 'tasks', 'subscriptions', 'security', 'shop']);
 
 // Security remediation H-01 — the 'security' module (the org-wide MFA
 // toggle) deliberately uses requirePermissionNoMfaGate, not
@@ -411,7 +416,7 @@ router.post('/sms/test', requirePermission('settings.manage'), async (req, res, 
     const statusCallbackUrl = `${proto}://${host}/api/sms/webhook/twilio/status`;
     const result = await sendSms({
       to,
-      body: 'Test message from localCRM — Twilio connection verified.',
+      body: 'Test message — your Twilio connection is working.',
       userId: req.user.id,
       statusCallbackUrl,
     });

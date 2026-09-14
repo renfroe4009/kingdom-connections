@@ -550,8 +550,8 @@ const BIZ_DEFAULTS = {
   phone:            '',
   email:            '',
   website:          '',
-  primary_color:    '#F05523',
-  secondary_color:  '#1A1A1A',
+  primary_color:    '#1f2937',
+  secondary_color:  '#4b5563',
   logo_web_url:     '',
   logo_print_url:   '',
   alert_emails:     [],
@@ -678,7 +678,7 @@ function BusinessTab() {
                   className="form-control font-monospace"
                   value={form.primary_color}
                   onChange={(e) => setForm((f) => ({ ...f, primary_color: e.target.value }))}
-                  placeholder="#F05523"
+                  placeholder="#1f2937"
                   maxLength={7}
                 />
               </div>
@@ -697,7 +697,7 @@ function BusinessTab() {
                   className="form-control font-monospace"
                   value={form.secondary_color}
                   onChange={(e) => setForm((f) => ({ ...f, secondary_color: e.target.value }))}
-                  placeholder="#1A1A1A"
+                  placeholder="#4b5563"
                   maxLength={7}
                 />
               </div>

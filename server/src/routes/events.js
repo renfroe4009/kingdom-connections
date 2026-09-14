@@ -19,6 +19,7 @@ const { ensureConstituentTag } = require('../services/constituents');
 const moduleSettings = require('../services/moduleSettings');
 const { createTicketsForRegistration, performScan } = require('../services/eventTickets');
 const { sendMail } = require('../services/mailer');
+const { getBrandColors } = require('../services/brandColors');
 const { generatePin, verifyEventPin, checkinPinLimiter } = require('../services/checkinPin');
 
 // Free tickets never touch the invoice/payment pipeline, so they never hit
@@ -34,6 +35,8 @@ async function sendFreeRegistrationEmail({ email, name, event, ticketName, quant
   const ticketImgs = (tickets || []).map(t =>
     `<img src="${clientBase}/api/events/public/ticket/${t.qr_token}/qr.png" alt="Ticket QR code" width="120" height="120" style="margin:6px">`
   ).join('');
+  // Primary, not secondary — see checkout.js's order confirmation.
+  const { primary: linkColor } = await getBrandColors();
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
       <h2>You're registered, ${name}!</h2>
@@ -42,7 +45,7 @@ async function sendFreeRegistrationEmail({ email, name, event, ticketName, quant
       ${ticketImgs ? `<p>Show one of these at the gate:</p><div style="text-align:center">${ticketImgs}</div>` : ''}
       <p style="font-size:0.85rem;color:#555;text-align:center;margin-top:1.5rem">
         Want to track this alongside your full history?
-        <a href="${registerUrl}" style="color:#C9A227;font-weight:600;text-decoration:underline">Create your free account &rarr;</a>
+        <a href="${registerUrl}" style="color:${linkColor};font-weight:600;text-decoration:underline">Create your free account &rarr;</a>
       </p>
     </div>`;
   try {

@@ -9,6 +9,7 @@ const { z } = require('zod');
 const { db } = require('../db');
 const { signToken, signMfaPendingToken, verifyMfaPendingToken, requireAuth } = require('../middleware/auth');
 const { sendMail } = require('../services/mailer');
+const { renderBySlug } = require('../services/templates');
 const { passwordSchema, hashPassword, needsRehash, isPasswordBreached } = require('../services/passwordPolicy');
 const mfa = require('../services/mfa');
 
@@ -299,6 +300,14 @@ router.post('/logout', requireAuth, async (req, res, next) => {
 // Generates a 1-hour reset token and emails a link. Always returns 200 so
 // callers cannot enumerate registered emails.
 // ---------------------------------------------------------------------------
+// First names are user-supplied (portal self-registration), and neither the
+// email HTML nor the template renderer escapes merge values.
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 const forgotLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -337,23 +346,34 @@ router.post('/forgot-password', forgotLimiter, async (req, res, next) => {
       const resetPath = (user.is_portal_only && !user.has_non_portal_role) ? '/portal/reset-password' : '/reset-password';
       const resetUrl = `${origin}${resetPath}?token=${rawToken}`;
 
+      // Rendered from the `password_reset` system template so it carries this
+      // org's name, logo and colours. The inline version below is only the
+      // fallback if that template is missing, and is deliberately brand-free
+      // — never hardcode an organisation or product name into it.
+      const firstName = user.first_name || 'there';
+      let subject = 'Reset your password';
+      let html = `<p>Hi ${escapeHtml(firstName)},</p>
+<p>We received a request to reset your password.</p>
+<p><a href="${resetUrl}">Reset password</a></p>
+<p>This link expires in <strong>1 hour</strong>. If you didn't request a reset, you can safely ignore this email.</p>
+<p style="font-size:12px">${resetUrl}</p>`;
+      try {
+        const rendered = await renderBySlug('password_reset', {}, {
+          contact: { first_name: escapeHtml(firstName), email: user.email },
+          reset:   { url: resetUrl },
+        });
+        if (rendered) {
+          subject = rendered.subject;
+          html = rendered.html;
+        }
+      } catch (_e) { /* use the fallback above */ }
+
       try {
         await sendMail({
-          to:      user.email,
-          subject: 'Reset your localCRM password',
-          html: `
-            <p>Hi ${user.first_name || 'there'},</p>
-            <p>We received a request to reset the password for your localCRM account.</p>
-            <p style="margin:24px 0">
-              <a href="${resetUrl}"
-                 style="background:#F05523;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
-                Reset password
-              </a>
-            </p>
-            <p>This link expires in <strong>1 hour</strong>. If you didn't request a reset, you can safely ignore this email.</p>
-            <p style="color:#999;font-size:12px">${resetUrl}</p>
-          `,
-          text: `Reset your localCRM password: ${resetUrl}\n\nThis link expires in 1 hour.`,
+          to: user.email,
+          subject,
+          html,
+          text: `Reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request a reset, you can ignore this email.`,
         });
       } catch (_e) { /* SMTP failure — token is still stored, admin can find it */ }
     }

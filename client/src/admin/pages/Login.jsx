@@ -77,7 +77,7 @@ export default function Login() {
   return (
     <div
       className="d-flex align-items-center justify-content-center"
-      style={{ minHeight: '100vh', background: 'linear-gradient(135deg, var(--brand-dark, #071527) 0%, var(--brand, #0A1F3D) 55%, var(--secondary, #C9A227) 100%)' }}
+      style={{ minHeight: '100vh', background: 'linear-gradient(135deg, var(--brand-dark, #111827) 0%, var(--brand, #1f2937) 55%, var(--secondary, #4b5563) 100%)' }}
     >
       <div className="card shadow-lg" style={{ width: 420, maxWidth: '94vw' }}>
         <div className="card-body p-4">

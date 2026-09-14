@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Commit and push the current work to GitHub safely — scans the staged diff for credentials first, branches off main rather than committing straight to it, stages deliberately instead of `git add -A`, and writes a real commit message. Use when asked to push, commit, ship, or "send this to git". Also use before handing a change to anyone else, or before a deploy that pulls from the repo.
+description: Commit and push the current work to GitHub safely — confirms the git commit identity matches the GitHub account that will push, scans the staged diff for credentials first, branches off main rather than committing straight to it, stages deliberately instead of `git add -A`, writes a real commit message, and merges in the latest main (resolving conflicts, re-checking the build) before pushing. Use when asked to push, commit, ship, or "send this to git". Also use before handing a change to anyone else, or before a deploy that pulls from the repo.
 ---
 
 # Ship — commit and push, without leaking anything
@@ -40,6 +40,102 @@ raise, any of:
 If one of those is untracked but *not* ignored, fix `.gitignore` in the same
 commit and say so. That is the actual defect — the file being dangerous is
 just the symptom.
+
+### Confirm who you're committing and pushing as
+
+Commits carry the identity in git config (`user.name`, `user.email`). The push
+is made by whichever GitHub account the credential store hands over. These are
+set independently, and this machine is used with more than one GitHub account.
+When they disagree, commits land under someone else's name, show as unlinked
+("unverified author") on GitHub, or get attributed to the wrong person in the
+client's history. Check this before creating any commit, because fixing it
+afterwards means rewriting commits.
+
+**1. The identity commits will use,** and where each value comes from (repo
+config beats global):
+
+```bash
+git config --show-origin --get user.name
+git config --show-origin --get user.email
+```
+
+**2. The GitHub account that will push.** Use the first method that works:
+
+* **GitHub CLI installed and logged in** — this is authoritative, and it can
+  also list the account's verified emails:
+
+  ```bash
+  gh api user --jq '.login'
+  gh api user/emails --jq '.[] | select(.verified) | .email'
+  ```
+
+  The second command needs the `user:email` scope. If it's refused, fall back
+  to the public profile check in step 3.
+
+* **Git Credential Manager** (no `gh`) — see whether an account is pinned for
+  this remote:
+
+  ```bash
+  git config --get-urlmatch credential.username "$(git remote get-url --push origin)"
+  ```
+
+  If nothing is pinned, list the signed-in GitHub accounts. This prints
+  usernames only:
+
+  ```bash
+  git credential-manager github list
+  ```
+
+  One account means that's the pusher. **Several accounts with none pinned
+  means the pusher is ambiguous.** Stop and ask the user which account should
+  push. Then offer to pin it for this repository only, and run this only after
+  they agree:
+
+  ```bash
+  git config credential.username <login>
+  ```
+
+⚠️ Never discover the account with `git credential fill`, or anything else that
+reads the stored token. It prints the live credential in plain text. Usernames
+from the commands above are all this check needs.
+
+**3. Compare.** Look up the account's public profile (no login needed):
+
+```bash
+curl -s https://api.github.com/users/<login>
+```
+
+* **Name** — should be the account's `login` or its profile `name`. Anything
+  else, flag it.
+* **Email** — must be an address GitHub has verified for that account, or
+  commits won't link to it. It counts as confirmed when it is:
+  - in the verified list from `gh api user/emails`, or
+  - the profile's public `email`, or
+  - the account's no-reply address, `<id>+<login>@users.noreply.github.com`,
+    using the `id` from the profile
+
+  If none of those applies, the email can't be verified from here. That
+  happens with a private email and no `gh`. Don't treat it as a pass: show the
+  user the identity and the account, and ask them to confirm the email is
+  verified on that account. Once they confirm, don't ask again in the same
+  session.
+
+**4. On a mismatch, ask — never fix it silently.**
+
+* **Never** change `--global` git config. It affects every other repository
+  on the machine, including other clients' work.
+* With the user's agreement, set the correct identity for **this repository
+  only**:
+
+  ```bash
+  git config user.name "<name>"
+  git config user.email "<verified email>"
+  ```
+
+  If they don't want their real email exposed, suggest the no-reply address.
+
+* If the user says the mismatch is intentional (for example, committing as a
+  client's account), accept it and say so in the report.
 
 ## 2 — Branch when on the default branch
 
@@ -101,7 +197,138 @@ EOF
 
 ⚠️ In PowerShell use `@'…'@` instead; the closing delimiter must sit at column 0.
 
-## 6 — Push and hand back a link
+## 6 — Bring in the latest main before pushing
+
+Other people push to `main` while you work. Pushing a branch that was cut from
+an old `main` hands the collision to whoever reviews or deploys it — or, worse,
+it merges cleanly in git and breaks at runtime. Resolve that here, on your
+machine, where you can still test it.
+
+Always run this, even if the branch is minutes old. Your own commit is safe
+first — that is why this comes after step 5, not before.
+
+```bash
+git fetch origin
+git merge-base --is-ancestor origin/main HEAD && echo "already up to date"
+```
+
+If it prints `already up to date`, skip to step 7. Otherwise record where the
+branch was, then merge:
+
+```bash
+PRE_MERGE=$(git rev-parse HEAD)
+git merge --no-edit origin/main
+```
+
+**Merge, never rebase.** A rebase rewrites commits that may already be on the
+remote and then needs a force-push. A merge never does.
+
+### If the merge stops on conflicts
+
+List them:
+
+```bash
+git diff --name-only --diff-filter=U
+```
+
+Read both sides of every conflict before touching it. Then:
+
+* **Resolve it yourself** when the intent of both sides survives intact:
+  - both sides added different imports, routes, list entries or CSS rules
+  - one side reformatted or renamed, and the other made an unrelated change
+    nearby
+  - version-number-only lines, such as the `version` field in a
+    `package-lock.json`
+* **Stop and ask the user** when both sides changed the *same logic* — the same
+  condition, query, calculation, copy or config value — in different ways.
+  Choosing whose version wins is a product decision, not a merge mechanic.
+  Show both versions and what each does.
+* **Lockfile conflicts:** resolve `package.json` by hand. Then regenerate the
+  lockfile rather than hand-editing it:
+
+  ```bash
+  git checkout --theirs <dir>/package-lock.json
+  cd <dir> && npm install --package-lock-only
+  ```
+
+* **Never** resolve a conflict in `.env*`, secrets, or credential-bearing
+  config. Ask.
+
+After each file is resolved, confirm no markers are left, then stage that
+file by name:
+
+```bash
+grep -nE "^(<<<<<<<|=======|>>>>>>>)" <file>
+git add <file>
+```
+
+Finish the merge once every file is resolved:
+
+```bash
+git commit --no-edit
+```
+
+If it turns out to be more than you should decide, back out completely. This
+restores the branch exactly as it was:
+
+```bash
+git merge --abort
+```
+
+### Re-check what the merge touched
+
+A clean merge in git is not proof the code still works. Find what came in:
+
+```bash
+git diff --name-only "$PRE_MERGE" HEAD
+```
+
+Run the checks that match, and fix anything the merge broke before pushing:
+
+* **`client/package.json` or `server/package.json` changed** — run
+  `npm install` in that folder first. A teammate adding a dependency is exactly
+  how the build fails and the server crashes on start (`dompurify` and `otplib`
+  both did this).
+* **Anything under `client/` changed** — `cd client && npm run build`.
+* **Anything under `server/` changed** — `node --check` each changed file, then
+  load each changed module to catch a renamed export or broken `require`:
+
+  ```bash
+  cd server && node -e "require('./src/routes/<changed>')"
+  ```
+
+  ⚠️ Never `require('./src/index.js')` for this. It starts the server, and
+  startup runs the template seeder, which writes to the database.
+
+If a check fails because of the merge, fix it in a separate commit whose
+message says it repairs the merge. If the cause isn't obvious and small, stop
+and report instead. Never push a branch you know is broken.
+
+### Re-scan exactly what will leave the machine
+
+Step 4 scanned your own commit. Conflict resolutions and merge fixes are new
+edits it never saw. Scan everything this branch adds on top of `main`:
+
+```bash
+git diff origin/main HEAD | grep -inE "password|secret|api[_-]?key|token|BEGIN [A-Z ]*PRIVATE KEY|rlwy\.net|amazonaws\.com|r2\.cloudflarestorage" | head -20
+```
+
+Read every hit, the same as step 4.
+
+## 7 — Push and hand back a link
+
+First, confirm every commit about to leave carries the identity approved in
+step 1. That includes commits made earlier on this branch under a different
+config, and the merge commit from step 6:
+
+```bash
+git log origin/main..HEAD --format='%h %an <%ae>' | sort -k2 -u
+```
+
+If any author differs, stop and show the user the commits. Changing an author
+means rewriting commits, so ask before doing it. Only commits that have never
+been pushed may be rewritten, and never with a force-push to a shared branch
+unless the user says so.
 
 ```bash
 git push -u origin <branch>
@@ -135,5 +362,18 @@ push can look complete while the deploy still breaks:
 
 State plainly: the branch, what was committed, what was deliberately left out,
 and every follow-up step the change needs to actually work in another
-environment. A push that lands but leaves the site broken because a migration
+environment.
+
+Also state the commit identity and the account that pushed. Say whether the
+email was verified against that account, confirmed by the user, or accepted
+as an intentional mismatch.
+
+Also say how the branch relates to `main`:
+
+* already up to date, or merged in N new commits from `main`
+* each conflict, and how it was resolved
+* any fix commit the merge needed
+* which checks ran afterwards, and their result
+
+If you stopped to ask about a conflict, say so. Don't report a push as done. A push that lands but leaves the site broken because a migration
 never ran is not a success, and describing it as one wastes the next hour.

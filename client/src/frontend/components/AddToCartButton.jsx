@@ -25,11 +25,11 @@ export default function AddToCartButton({ productId, qty = 1, style, className, 
       <button
         onClick={handleClick}
         onMouseEnter={e => { if (!done) e.currentTarget.style.background = '#000000'; }}
-        onMouseLeave={e => { if (!done) e.currentTarget.style.background = 'var(--brand-primary, #0A1F3D)'; }}
+        onMouseLeave={e => { if (!done) e.currentTarget.style.background = 'var(--brand-primary, #1f2937)'; }}
         disabled={busy}
         className={className}
         style={{
-          background: done ? '#16a34a' : 'var(--brand-primary, #0A1F3D)', color: '#ffffff', border: 'none',
+          background: done ? '#16a34a' : 'var(--brand-primary, #1f2937)', color: '#ffffff', border: 'none',
           padding: '0.75rem 1.5rem', borderRadius: 16, fontWeight: 600, fontSize: '0.9rem',
           cursor: busy ? 'default' : 'pointer', transition: 'background 0.2s', width: '100%',
           ...style,

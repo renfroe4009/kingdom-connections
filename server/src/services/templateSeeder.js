@@ -646,6 +646,55 @@ ${helpLine()}
     ),
   },
 
+  // ── 14. Password Reset ────────────────────────────────────────────────────
+  // Sent by POST /api/auth/forgot-password to staff and portal users alike.
+  // It used to be hand-written inline in routes/auth.js with the boilerplate
+  // product's name and colour baked in; as a template it inherits this org's
+  // logo, colours and footer like every other system email. The recipient
+  // isn't necessarily a CRM contact, so the route passes contact.first_name /
+  // contact.email and reset.url through renderBySlug()'s `extra` argument.
+  //
+  // Editing is admin-only (services/credentialTemplates.js) because the body
+  // carries the reset link. Version 2 exists only so the first deploy of that
+  // lock re-applies this canonical body: a local server running unreleased
+  // code seeded v1 into the shared database early, where production's
+  // unguarded templates route could still edit it before the lock shipped.
+  {
+    version: 2,
+    slug:     'password_reset',
+    name:     'Password Reset',
+    category: 'System',
+    channel:  'email',
+    subject:  'Reset your {{business.name}} password',
+    body: wrapEmail(
+      'Use the link inside to choose a new password. It expires in 1 hour.',
+      `
+${statusBanner('&#128274;', 'Password Reset', '#ebf4ff', '#1a56db')}
+
+<h1 style="margin:0 0 10px;font-size:26px;font-weight:800;color:#1a202c;letter-spacing:-.3px;line-height:1.2">
+  Hi {{contact.first_name}},
+</h1>
+<p style="margin:0 0 28px;font-size:15px;color:#4a5568;line-height:1.7">
+  We received a request to reset the password for your <strong style="color:#1a202c">{{business.name}}</strong> account.
+</p>
+
+${ctaButton('{{reset.url}}', 'Reset Password &rarr;', 'This link expires in <strong>1 hour</strong>.')}
+
+<p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#4a5568">Button not working?</p>
+<p style="margin:0 0 12px;font-size:12px;color:#718096;line-height:1.6">Copy and paste this link into your browser:</p>
+<div style="padding:12px 16px;background:#f7fafc;border:1px solid #e8ecf0;border-radius:6px;margin-bottom:28px">
+  <a href="{{reset.url}}" style="font-size:12px;font-family:'Courier New',monospace;color:{{business.secondary_color}};word-break:break-all;text-decoration:none">{{reset.url}}</a>
+</div>
+
+${divider()}
+
+<p style="margin:0;font-size:12px;color:#a0aec0;line-height:1.8;text-align:center">
+  If you didn't request a password reset, you can safely ignore this email — your password won't change.
+</p>
+`
+    ),
+  },
+
 ];
 
 // =============================================================================
