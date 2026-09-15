@@ -183,6 +183,24 @@ router.post('/versions/:vid/restore', requireAuth, requirePermission('settings.m
     const { vid } = req.params;
     const [[ver]] = await db.query('SELECT * FROM website_versions WHERE id = :vid', { vid });
     if (!ver) return res.status(404).json({ error: 'Version not found' });
+
+    // Snapshot the current content first, so a restore can itself be undone.
+    const [[current]] = await db.query('SELECT puck_data FROM website_pages WHERE id = :id', { id: ver.page_id });
+    if (current?.puck_data) {
+      const userName = req.user ? `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() || req.user.email : null;
+      const restoredLabel = ver.snapshot_label || `version #${ver.id}`;
+      await db.query(
+        'INSERT INTO website_versions (page_id, puck_data, snapshot_label, created_by, user_name) VALUES (:page_id, :puck_data, :snapshot_label, :created_by, :user_name)',
+        {
+          page_id: ver.page_id,
+          puck_data: typeof current.puck_data === 'string' ? current.puck_data : JSON.stringify(current.puck_data),
+          snapshot_label: `Before restoring "${restoredLabel}"`.slice(0, 255),
+          created_by: req.user?.id || null,
+          user_name: userName,
+        }
+      );
+    }
+
     await db.query(
       'UPDATE website_pages SET puck_data = :puck_data WHERE id = :id',
       { puck_data: typeof ver.puck_data === 'string' ? ver.puck_data : JSON.stringify(ver.puck_data), id: ver.page_id }

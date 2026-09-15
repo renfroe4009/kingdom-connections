@@ -65,6 +65,7 @@ const campaignsRoutes     = require('./routes/campaigns');
 const automationsRoutes   = require('./routes/automations');
 const aiRoutes            = require('./routes/ai');
 const websiteRoutes       = require('./routes/website');
+const pageImportRoutes    = require('./routes/pageImport');
 const cmsRoutes           = require('./routes/cms');
 const cmsDataRoutes       = require('./routes/cmsData');
 const formsRoutes         = require('./routes/forms');
@@ -251,6 +252,10 @@ app.use('/api/maps',          mapsRoutes);
 app.use('/api/campaigns',     campaignsRoutes);
 app.use('/api/automations',   automationsRoutes);
 app.use('/api/ai',            aiRoutes);
+// Mounted before websiteRoutes (both share the /api/website prefix) so it can
+// never be shadowed by a future generic route in website.js — see
+// routes/pageImport.js's header comment.
+app.use('/api/website/import', pageImportRoutes);
 app.use('/api/website',       websiteRoutes);
 app.use('/api/cms',           cmsRoutes);
 app.use('/api/cms-data',      cmsDataRoutes);

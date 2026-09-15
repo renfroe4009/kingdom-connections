@@ -6,6 +6,8 @@ import { PAGE_TEMPLATES, buildTemplate } from '../../builder/templates/pageTempl
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
+import ImportDesignModal from './ImportDesignModal.jsx';
+import VersionHistoryModal from './VersionHistoryModal.jsx';
 
 const IMPACT_COLOR = { critical: '#dc3545', serious: '#fd7e14', moderate: '#ffc107', minor: '#6c757d' };
 const IMPACT_LABEL = { critical: 'Critical', serious: 'Serious', moderate: 'Moderate', minor: 'Minor' };
@@ -297,12 +299,19 @@ export default function WebsitePagesPage() {
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [creating, setCreating] = useState(false);
   const [adaPage, setAdaPage] = useState(null);
+  const [historyPage, setHistoryPage] = useState(null);
   const navigate = useNavigate();
   const { confirm, dialog: confirmDialog } = useConfirm();
 
+  const reloadPages = useCallback(() => {
+    api.get('/website/pages').then(r => setPages(r.data)).catch(() => {});
+  }, []);
+
   useEffect(() => {
+    setLoading(true);
     api.get('/website/pages').then(r => setPages(r.data)).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -347,10 +356,16 @@ export default function WebsitePagesPage() {
         title="Website Pages"
         subtitle="Manage your public website pages"
         actions={
-          <button className="btn btn-primary btn-sm" onClick={() => setShowTemplates(true)}>
-            <iconify-icon icon="solar:add-circle-line-duotone" className="me-1" />
-            + New Page
-          </button>
+          <div className="d-flex gap-2">
+            <button className="btn btn-outline-primary btn-sm" onClick={() => setShowImport(true)}>
+              <iconify-icon icon="solar:file-download-line-duotone" className="me-1" />
+              Import Design (ZIP)
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowTemplates(true)}>
+              <iconify-icon icon="solar:add-circle-line-duotone" className="me-1" />
+              + New Page
+            </button>
+          </div>
         }
       />
 
@@ -382,6 +397,7 @@ export default function WebsitePagesPage() {
                     <td className="text-end">
                       <a href={`/${p.slug}`} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-secondary me-1">Preview ↗</a>
                       <button className="btn btn-sm btn-outline-info me-1" onClick={() => setAdaPage(p)} title="Run ADA / WCAG accessibility audit">ADA ♿</button>
+                      <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHistoryPage(p)} title="View and restore saved versions">History</button>
                       <Link to={`/admin/website/pages/${p.id}/edit`} className="btn btn-sm btn-outline-primary me-1">Edit</Link>
                       <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => clonePage(p.id)} title="Clone this page as a draft">Clone</button>
                       <button className="btn btn-sm btn-outline-danger" onClick={() => deletePage(p.id, p.title)}>Delete</button>
@@ -398,11 +414,20 @@ export default function WebsitePagesPage() {
       )}
 
       {adaPage && <AdaModal page={adaPage} onClose={() => setAdaPage(null)} />}
+      {historyPage && <VersionHistoryModal page={historyPage} onClose={() => setHistoryPage(null)} onRestored={reloadPages} />}
 
       {showTemplates && (
         <TemplatePickerModal
           onClose={() => setShowTemplates(false)}
           onPick={createFromTemplate}
+        />
+      )}
+
+      {showImport && (
+        <ImportDesignModal
+          pages={pages}
+          onClose={() => setShowImport(false)}
+          onImported={reloadPages}
         />
       )}
 

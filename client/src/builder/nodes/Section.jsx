@@ -29,6 +29,7 @@ export default function Section({
   maxWidth,
   fullBleed,
   sectionType,
+  importedDesign,
   children,
 }) {
   const ref = useNodeRef();
@@ -71,7 +72,7 @@ export default function Section({
     <section
       ref={ref}
       id={domId}
-      className={cx('bx-section', fullBleed && 'bx-section--full', overlay && backgroundImage && 'bx-section--overlay', customClass)}
+      className={cx('bx-section', fullBleed && 'bx-section--full', importedDesign && 'bx-section--imported', overlay && backgroundImage && 'bx-section--overlay', customClass)}
       style={style}
       data-section-type={sectionType || undefined}
     >
@@ -186,6 +187,9 @@ Section.craft = {
     // imported stylesheet targets [data-section-type="hero"] etc. directly,
     // so dropping it renders those sections unstyled.
     sectionType: '',
+    // Set by the design importer. Blank padding then means "none" instead of
+    // the 64px/40px default, since the imported markup brings its own spacing.
+    importedDesign: false,
   },
   related: { settings: SectionSettings },
   rules: {
