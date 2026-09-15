@@ -113,9 +113,15 @@ async function s3Delete(key) {
 // ---------- PUBLIC API ----------
 /**
  * Save a buffer. Returns { key, driver, bucket }.
+ *
+ * `key` is normally auto-generated (random + today's date, via buildKey) so
+ * two uploads never collide. Callers that need a REPRODUCIBLE key — the
+ * design-import asset deduper, so re-importing the same image twice reuses
+ * the same object instead of storing it again — may pass one explicitly.
+ * Still goes through safeLocalPath's containment check on the local driver.
  */
-async function put({ entity_type, entity_id, originalName, contentType, buffer }) {
-  const key = buildKey({ entity_type, entity_id, originalName });
+async function put({ entity_type, entity_id, originalName, contentType, buffer, key: explicitKey }) {
+  const key = explicitKey || buildKey({ entity_type, entity_id, originalName });
   if (DRIVER === 's3') {
     await s3Put({ key, buffer, contentType });
     return { key, driver: 's3', bucket: process.env.S3_BUCKET };

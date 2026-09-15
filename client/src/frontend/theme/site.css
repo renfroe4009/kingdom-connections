@@ -128,6 +128,12 @@
   background-position: center;
   color: var(--bx-section-fg, inherit);
 }
+/* Imported design sections: blank padding fields add nothing — the imported
+   markup carries its own spacing. A value typed in the panel still applies. */
+.bx-section--imported {
+  padding-top: var(--bx-section-pt, 0px);
+  padding-bottom: var(--bx-section-pb, 0px);
+}
 .bx-section__inner {
   max-width: var(--bx-section-width, var(--bx-container));
   margin-inline: auto;
@@ -188,6 +194,10 @@
   }
   .bx-row--flex { flex-direction: column; }
   .bx-section { padding-top: var(--bx-section-pt-sm, 40px); padding-bottom: var(--bx-section-pb-sm, 40px); }
+  .bx-section--imported {
+    padding-top: var(--bx-section-pt-sm, var(--bx-section-pt, 0px));
+    padding-bottom: var(--bx-section-pb-sm, var(--bx-section-pb, 0px));
+  }
 }
 
 /* ═══ CONTENT COMPONENTS ══════════════════════════════════════════════════ */
