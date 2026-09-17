@@ -9,6 +9,7 @@ const { logActivity } = require('../services/activity');
 const { resolveOwnerScope, ownerClause } = require('../services/scope');
 const { triggerWorkflow } = require('../services/automations');
 const { mergeContacts, getContactMergePreview, MergeConflictError } = require('../services/merge');
+const { notifyMemberChange } = require('../services/ppWebhooks');
 
 router.use(requireAuth);
 
@@ -483,6 +484,7 @@ router.post('/', requirePermission('contacts.write'), async (req, res, next) => 
       action: 'created', description: `Contact created` });
     const [[newContact]] = await db.query('SELECT * FROM contacts WHERE id = :id', { id });
     triggerWorkflow('contact.created', 'contact', newContact).catch(() => {});
+    notifyMemberChange('member.created', newContact).catch(() => {});
     res.status(201).json({ id });
   } catch (err) { next(err); }
 });
@@ -540,6 +542,8 @@ router.put('/:id', requirePermission('contacts.write'), async (req, res, next) =
     }
     await logActivity({ userId: req.user.id, entityType: 'contact', entityId: id,
       action: 'updated', description: 'Contact updated' });
+    const [[updatedContact]] = await db.query('SELECT * FROM contacts WHERE id = :id', { id });
+    notifyMemberChange('member.updated', updatedContact).catch(() => {});
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

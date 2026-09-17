@@ -456,6 +456,31 @@ router.patch('/:id/tags', requirePermission('organizations.write'), async (req, 
   } catch (err) { next(err); }
 });
 
+// Dedicated toggle for the Praying Planet mobile API's visibility gate —
+// kept separate from PUT /:id (same reasoning as the tags-only endpoint
+// above) so enabling/disabling app visibility never has to resend the rest
+// of the org record. This is the ONLY thing that makes an org's members
+// visible to /api/mobile/v1/* (see routes/mobileApi.js).
+const appEnabledSchema = z.object({ app_enabled: z.boolean() });
+router.patch('/:id/app-enabled', requirePermission('organizations.write'), async (req, res, next) => {
+  try {
+    const { app_enabled } = appEnabledSchema.parse(req.body);
+    const id = Number(req.params.id);
+
+    const [[existing]] = await db.query('SELECT owner_id FROM organizations WHERE id = :id', { id });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const scopeIds = await resolveOwnerScope(req.user);
+    if (scopeIds !== null && !scopeIds.includes(existing.owner_id)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    await db.query('UPDATE organizations SET app_enabled = :app_enabled WHERE id = :id', { app_enabled, id });
+    await logActivity({ userId: req.user.id, entityType: 'organization', entityId: id,
+      action: 'updated', description: `Mobile app visibility ${app_enabled ? 'enabled' : 'disabled'}` });
+    res.json({ ok: true, app_enabled });
+  } catch (err) { next(err); }
+});
+
 router.delete('/:id', requirePermission('organizations.delete'), async (req, res, next) => {
   try {
     await db.query('DELETE FROM organizations WHERE id = :id', { id: req.params.id });

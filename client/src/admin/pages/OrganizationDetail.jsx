@@ -32,6 +32,7 @@ export default function OrganizationDetail() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const [data, setData] = useState(null);
+  const [appEnabledBusy, setAppEnabledBusy] = useState(false);
   const [editShow, setEditShow] = useState(false);
   const [form, setForm] = useState({});
   const [formError, setFormError] = useState('');
@@ -91,6 +92,21 @@ export default function OrganizationDetail() {
     api.get(`/organizations/${id}/timeline`).then((r) => setTimeline(r.data.events || [])).catch(() => {});
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+
+  // Standalone toggle — kept independent of the big edit-modal save flow
+  // (same pattern as Settings → Security's MFA switch) so flipping mobile
+  // API visibility never requires resubmitting the rest of the org record.
+  async function setAppEnabled(next) {
+    setAppEnabledBusy(true);
+    try {
+      await api.patch(`/organizations/${id}/app-enabled`, { app_enabled: next });
+      setData((d) => ({ ...d, organization: { ...d.organization, app_enabled: next } }));
+    } catch (e) {
+      alert(e.response?.data?.error || 'Failed to update mobile app visibility');
+    } finally {
+      setAppEnabledBusy(false);
+    }
+  }
   const [cwUrls, setCwUrls] = useState(null);
   useEffect(() => {
     api.get('/settings/module/organizations').then((r) => setOrgCfg(r.data)).catch(() => {});
@@ -399,6 +415,28 @@ export default function OrganizationDetail() {
                 <dt className="col-5">Location</dt><dd className="col-7">{[organization.city, organization.state, organization.country].filter(Boolean).join(', ')}</dd>
                 <dt className="col-5">CW Company</dt><dd className="col-7">{organization.cw_company_id || '—'}</dd>
               </dl>
+            </div>
+          </div>
+          <div className="card mt-3">
+            <div className="card-body">
+              <div className="form-check form-switch mb-0">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  role="switch"
+                  id="orgAppEnabledSwitch"
+                  checked={!!organization.app_enabled}
+                  disabled={appEnabledBusy || !can('organizations.write')}
+                  onChange={(e) => setAppEnabled(e.target.checked)}
+                />
+                <label className="form-check-label fw-semibold" htmlFor="orgAppEnabledSwitch">
+                  Visible to Praying Planet mobile app
+                </label>
+              </div>
+              <div className="text-muted small mt-1">
+                When on, this organization's members are visible to the Mobile API
+                (Settings → Integrations → Mobile API).
+              </div>
             </div>
           </div>
           <TagEditor

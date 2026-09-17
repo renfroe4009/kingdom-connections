@@ -1,0 +1,230 @@
+openapi: 3.0.3
+info:
+  title: Kingdom Connections — Mobile API (Praying Planet)
+  version: "1.0.0"
+  description: >
+    Server-to-server API for the Praying Planet mobile app's backend.
+    See ../MOBILE-API.md for auth flow details, webhook events/signing, and
+    the deletion-compliance flow (not representable in OpenAPI).
+servers:
+  - url: https://kingdom-connections-six.vercel.app/api/mobile
+    description: Production (routed through the same backend as the CRM API)
+
+tags:
+  - name: auth
+  - name: organizations
+  - name: members
+
+paths:
+  /oauth/token:
+    post:
+      tags: [auth]
+      summary: Exchange client credentials for a short-lived access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, client_secret]
+              properties:
+                client_id: { type: string }
+                client_secret: { type: string }
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token: { type: string }
+                  token_type: { type: string, example: Bearer }
+                  expires_in: { type: integer, example: 3600 }
+                  scopes: { type: array, items: { type: string } }
+        '400': { description: Missing client_id/client_secret }
+        '401': { description: Invalid client credentials }
+        '429': { description: Too many token requests }
+
+  /v1/organizations:
+    get:
+      tags: [organizations]
+      summary: List organizations enabled for this integration
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organizations:
+                    type: array
+                    items: { $ref: '#/components/schemas/Organization' }
+        '401': { description: Missing/invalid/expired token }
+        '403': { description: Token lacks organizations:read scope }
+        '429': { description: Rate limited }
+
+  /v1/organizations/{id}/members:
+    get:
+      tags: [members]
+      summary: List members of an organization (paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, maximum: 500 }
+        - name: cursor
+          in: query
+          description: Previous response's next_cursor; omit for the first page
+          schema: { type: integer }
+        - name: updated_since
+          in: query
+          description: ISO-8601 timestamp — only members changed after this
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items: { $ref: '#/components/schemas/Member' }
+                  next_cursor:
+                    type: integer
+                    nullable: true
+        '401': { description: Missing/invalid/expired token }
+        '403': { description: Token lacks members:read scope }
+        '404': { description: Organization not found or not enabled for this integration }
+        '429': { description: Rate limited }
+
+  /v1/members/{id}:
+    get:
+      tags: [members]
+      summary: Get a single member
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '401': { description: Missing/invalid/expired token }
+        '403': { description: Token lacks members:read scope }
+        '404': { description: Not found, or outside this integration's org scope }
+        '429': { description: Rate limited }
+
+  /v1/members/{id}/app-profile:
+    patch:
+      tags: [members]
+      summary: Update the app-owned profile fields for a member
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppProfileUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '400': { description: Invalid field values }
+        '401': { description: Missing/invalid/expired token }
+        '403': { description: Token lacks members:write scope }
+        '404': { description: Not found, or outside this integration's org scope }
+        '429': { description: Rate limited }
+
+  /v1/members/{id}/delete-request:
+    post:
+      tags: [members]
+      summary: >
+        Erase this member's app-owned profile data (App Store/Play Store
+        "delete my data" compliance). Idempotent. Does NOT delete the
+        underlying CRM record or donation/membership history — see
+        ../MOBILE-API.md §5.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '401': { description: Missing/invalid/expired token }
+        '403': { description: Token lacks members:delete scope }
+        '404': { description: Not found, or outside this integration's org scope }
+        '429': { description: Rate limited }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Organization:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        city: { type: string, nullable: true }
+        state: { type: string, nullable: true }
+    AppProfile:
+      type: object
+      properties:
+        avatar_url: { type: string, nullable: true }
+        bio: { type: string, nullable: true }
+        display_name_override: { type: string, nullable: true }
+        notification_consent: { type: boolean }
+        status: { type: string, enum: [active, deleted] }
+    Member:
+      type: object
+      properties:
+        id: { type: integer }
+        organization_id: { type: integer }
+        first_name: { type: string, nullable: true }
+        last_name: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        updated_at: { type: string }
+        app_profile: { $ref: '#/components/schemas/AppProfile' }
+    AppProfileUpdate:
+      type: object
+      properties:
+        avatar_url: { type: string, format: uri, maxLength: 500, nullable: true }
+        bio: { type: string, maxLength: 2000, nullable: true }
+        display_name_override: { type: string, maxLength: 150, nullable: true }
+        push_token: { type: string, maxLength: 255, nullable: true }
+        notification_consent: { type: boolean }
+
+security:
+  - bearerAuth: []
