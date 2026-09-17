@@ -135,6 +135,20 @@ export default function SettingsPage() {
   const [securityMsg, setSecurityMsg] = useState('');
   const [securityBusy, setSecurityBusy] = useState(false);
 
+  // Mobile API (Praying Planet) — status + create/manage. A secret (client
+  // secret or webhook signing secret) is only ever visible in the response
+  // right after it's generated — reveal-once, same as scripts/create-api-client.js.
+  const [mobileApi, setMobileApi] = useState(null); // null=loading, {clients,webhooks,app_enabled_org_count,valid_scopes,valid_events}
+  const [mobileApiErr, setMobileApiErr] = useState('');
+  const [revealedSecret, setRevealedSecret] = useState(null); // { label, value } — shown once, dismissible
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientScopes, setNewClientScopes] = useState([]);
+  const [clientBusy, setClientBusy] = useState(false);
+  const [newWebhookClientId, setNewWebhookClientId] = useState('');
+  const [newWebhookUrl, setNewWebhookUrl] = useState('');
+  const [newWebhookEvents, setNewWebhookEvents] = useState([]);
+  const [webhookBusy, setWebhookBusy] = useState(false);
+
   useEffect(() => {
     api.get('/settings/smtp').then((r) => r.data && setSmtp((s) => ({ ...s, ...r.data }))).catch(() => {});
     api.get('/settings/sms').then((r) => r.data && setSms((s) => ({ ...s, ...r.data, is_active: !!r.data.is_active }))).catch(() => {});
@@ -145,6 +159,7 @@ export default function SettingsPage() {
     api.get('/google/status').then((r) => setGoogle(r.data)).catch(() => setGoogle({ connected: false }));
     api.get('/ai/settings').then((r) => r.data && setAi((a) => ({ ...a, ...r.data, active: !!r.data.active }))).catch(() => {});
     api.get('/settings/module/security').then((r) => r.data && setSecurity((s) => ({ ...s, ...r.data }))).catch(() => {});
+    api.get('/mobile-api-admin/status').then((r) => setMobileApi(r.data)).catch(() => setMobileApi({ clients: [], webhooks: [], app_enabled_org_count: 0 }));
     // Handle redirect back from Google OAuth
     const gConnected = searchParams.get('connected');
     const gError     = searchParams.get('error');
@@ -178,6 +193,78 @@ export default function SettingsPage() {
     } catch (e) {
       setSecurityMsg(e.response?.data?.error || 'Failed to save.');
     } finally { setSecurityBusy(false); }
+  }
+
+  function reloadMobileApi() {
+    api.get('/mobile-api-admin/status').then((r) => setMobileApi(r.data)).catch(() => {});
+  }
+
+  function toggleInArray(arr, value) {
+    return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+  }
+
+  async function createMobileApiClient() {
+    setMobileApiErr(''); setClientBusy(true);
+    try {
+      const { data } = await api.post('/mobile-api-admin/clients', { name: newClientName, scopes: newClientScopes });
+      setRevealedSecret({
+        label: `Client secret for "${newClientName}" (client_id: ${data.client_id})`,
+        value: data.client_secret,
+      });
+      setNewClientName(''); setNewClientScopes([]);
+      reloadMobileApi();
+    } catch (e) {
+      setMobileApiErr(e.response?.data?.error || 'Failed to create client');
+    } finally { setClientBusy(false); }
+  }
+
+  async function toggleClientActive(client) {
+    try {
+      await api.patch(`/mobile-api-admin/clients/${client.id}`, { is_active: !client.is_active });
+      reloadMobileApi();
+    } catch (e) { setMobileApiErr(e.response?.data?.error || 'Failed to update client'); }
+  }
+
+  async function rotateClientSecret(client) {
+    const ok = await confirm(
+      `Rotate the secret for "${client.name}"? The old secret stops working immediately — the partner's backend will need the new one right away.`,
+      { danger: true, confirmLabel: 'Rotate secret' }
+    );
+    if (!ok) return;
+    try {
+      const { data } = await api.post(`/mobile-api-admin/clients/${client.id}/rotate-secret`);
+      setRevealedSecret({ label: `New client secret for "${client.name}"`, value: data.client_secret });
+    } catch (e) { setMobileApiErr(e.response?.data?.error || 'Failed to rotate secret'); }
+  }
+
+  async function createMobileApiWebhook() {
+    setMobileApiErr(''); setWebhookBusy(true);
+    try {
+      const { data } = await api.post('/mobile-api-admin/webhooks', {
+        api_client_id: Number(newWebhookClientId), target_url: newWebhookUrl, subscribed_events: newWebhookEvents,
+      });
+      setRevealedSecret({ label: `Signing secret for ${newWebhookUrl}`, value: data.signing_secret });
+      setNewWebhookClientId(''); setNewWebhookUrl(''); setNewWebhookEvents([]);
+      reloadMobileApi();
+    } catch (e) {
+      setMobileApiErr(e.response?.data?.error || 'Failed to register webhook');
+    } finally { setWebhookBusy(false); }
+  }
+
+  async function toggleWebhookActive(webhook) {
+    try {
+      await api.patch(`/mobile-api-admin/webhooks/${webhook.id}`, { is_active: !webhook.is_active });
+      reloadMobileApi();
+    } catch (e) { setMobileApiErr(e.response?.data?.error || 'Failed to update webhook'); }
+  }
+
+  async function deleteMobileApiWebhook(webhook) {
+    const ok = await confirm(`Delete the webhook endpoint for ${webhook.target_url}? This can't be undone — you'd need to re-register it.`, { danger: true, confirmLabel: 'Delete' });
+    if (!ok) return;
+    try {
+      await api.delete(`/mobile-api-admin/webhooks/${webhook.id}`);
+      reloadMobileApi();
+    } catch (e) { setMobileApiErr(e.response?.data?.error || 'Failed to delete webhook'); }
   }
 
   async function loadBatchRuns() {
@@ -391,6 +478,9 @@ export default function SettingsPage() {
         </button></li>
         <li className="nav-item"><button className={`nav-link ${tab === 'security' ? 'active' : ''}`} onClick={() => setTab('security')}>
           <iconify-icon icon="solar:shield-keyhole-line-duotone" class="me-1"></iconify-icon>Security
+        </button></li>
+        <li className="nav-item"><button className={`nav-link ${tab === 'mobileapi' ? 'active' : ''}`} onClick={() => setTab('mobileapi')}>
+          <iconify-icon icon="solar:smartphone-line-duotone" class="me-1"></iconify-icon>Mobile API
         </button></li>
       </ul>
       </div>
@@ -998,6 +1088,193 @@ export default function SettingsPage() {
               <li>Record Donations</li>
               <li>Manage Settings</li>
             </ul>
+          </div>
+        </div>
+      )}
+
+      {tab === 'mobileapi' && (
+        <div className="card">
+          <div className="card-body">
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <iconify-icon icon="solar:smartphone-line-duotone" style={{ fontSize: 24, color: 'var(--secondary)' }}></iconify-icon>
+              <h5 className="mb-0">Mobile API — Praying Planet</h5>
+            </div>
+            <p className="text-muted small mb-4">
+              Server-to-server API + webhooks that let the Praying Planet app read organizations/members
+              from this CRM and write back app-owned profile data. Full reference: <code>docs/MOBILE-API.md</code>.
+            </p>
+
+            {revealedSecret && (
+              <div className="alert alert-warning d-flex justify-content-between align-items-start gap-3 mb-4">
+                <div>
+                  <div className="fw-semibold mb-1">{revealedSecret.label}</div>
+                  <div className="text-muted small mb-1">
+                    Copy this now — it will not be shown again. Share it with the partner over a secure channel, not email/Slack.
+                  </div>
+                  <code className="user-select-all">{revealedSecret.value}</code>
+                </div>
+                <button className="btn-close" onClick={() => setRevealedSecret(null)} aria-label="Dismiss"></button>
+              </div>
+            )}
+            {mobileApiErr && <div className="alert alert-danger py-2 mb-3">{mobileApiErr}</div>}
+
+            {mobileApi === null && <div className="text-muted small">Loading…</div>}
+
+            {mobileApi && (
+              <>
+                <div className="mb-4">
+                  <span className="badge bg-primary-subtle text-primary-emphasis">
+                    {mobileApi.app_enabled_org_count} organization{mobileApi.app_enabled_org_count === 1 ? '' : 's'} enabled for the app
+                  </span>
+                  <span className="text-muted small ms-2">
+                    Toggle per-organization from that organization's detail page.
+                  </span>
+                </div>
+
+                <h6 className="mb-2">API Clients</h6>
+                {mobileApi.clients.length === 0 && (
+                  <p className="text-muted small">None provisioned yet.</p>
+                )}
+                {mobileApi.clients.map((c) => (
+                  <div key={c.id} className="d-flex align-items-center gap-3 p-3 border rounded mb-2">
+                    <iconify-icon
+                      icon={c.is_active ? 'solar:check-circle-bold' : 'solar:close-circle-bold'}
+                      style={{ fontSize: 24, color: c.is_active ? 'var(--bs-success)' : 'var(--bs-secondary)' }}
+                    ></iconify-icon>
+                    <div className="flex-grow-1">
+                      <div className="fw-semibold">{c.name}</div>
+                      <div className="text-muted small font-monospace">{c.client_id}</div>
+                      <div className="mt-1">
+                        {c.scopes.map((s) => (
+                          <span key={s} className="badge bg-light text-dark border me-1">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="text-muted small text-end">
+                      <div>{c.is_active ? 'Active' : 'Disabled'}</div>
+                      <div>Last used: {c.last_used_at || 'never'}</div>
+                    </div>
+                    <div className="d-flex flex-column gap-1">
+                      <button className="btn btn-outline-secondary btn-sm" onClick={() => rotateClientSecret(c)}>Rotate secret</button>
+                      <button className={`btn btn-sm ${c.is_active ? 'btn-outline-danger' : 'btn-outline-success'}`} onClick={() => toggleClientActive(c)}>
+                        {c.is_active ? 'Disable' : 'Enable'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="p-3 border rounded mb-4" style={{ background: '#FAFAFA' }}>
+                  <div className="fw-semibold small mb-2">Create a new client</div>
+                  <div className="row g-2 align-items-end">
+                    <div className="col-md-4">
+                      <label className="form-label small">Name</label>
+                      <input className="form-control form-control-sm" value={newClientName}
+                        onChange={(e) => setNewClientName(e.target.value)} placeholder="e.g. Praying Planet" />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label small d-block">Scopes</label>
+                      {(mobileApi.valid_scopes || []).map((s) => (
+                        <div className="form-check form-check-inline" key={s}>
+                          <input type="checkbox" className="form-check-input" id={`scope-${s}`}
+                            checked={newClientScopes.includes(s)}
+                            onChange={() => setNewClientScopes((arr) => toggleInArray(arr, s))} />
+                          <label className="form-check-label small" htmlFor={`scope-${s}`}>{s}</label>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="col-md-2">
+                      <button className="btn btn-primary btn-sm w-100" disabled={clientBusy || !newClientName.trim() || !newClientScopes.length}
+                        onClick={createMobileApiClient}>
+                        {clientBusy ? 'Creating…' : 'Create'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <h6 className="mb-2 mt-4">Webhook Endpoints</h6>
+                {mobileApi.webhooks.length === 0 && (
+                  <p className="text-muted small">None registered yet.</p>
+                )}
+                {mobileApi.webhooks.map((w) => (
+                  <div key={w.id} className="d-flex align-items-center gap-3 p-3 border rounded mb-2">
+                    <iconify-icon
+                      icon={w.is_active ? 'solar:check-circle-bold' : 'solar:close-circle-bold'}
+                      style={{ fontSize: 24, color: w.is_active ? 'var(--bs-success)' : 'var(--bs-secondary)' }}
+                    ></iconify-icon>
+                    <div className="flex-grow-1">
+                      <div className="fw-semibold text-break">{w.target_url}</div>
+                      <div className="text-muted small">{w.client_name}</div>
+                      <div className="mt-1">
+                        {w.subscribed_events.map((e) => (
+                          <span key={e} className="badge bg-light text-dark border me-1">{e}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="d-flex flex-column gap-1">
+                      <button className={`btn btn-sm ${w.is_active ? 'btn-outline-danger' : 'btn-outline-success'}`} onClick={() => toggleWebhookActive(w)}>
+                        {w.is_active ? 'Disable' : 'Enable'}
+                      </button>
+                      <button className="btn btn-outline-secondary btn-sm" onClick={() => deleteMobileApiWebhook(w)}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+
+                {mobileApi.clients.length > 0 && (
+                  <div className="p-3 border rounded" style={{ background: '#FAFAFA' }}>
+                    <div className="fw-semibold small mb-2">Register a new webhook</div>
+                    <div className="row g-2 align-items-end">
+                      <div className="col-md-3">
+                        <label className="form-label small">Client</label>
+                        <select className="form-select form-select-sm" value={newWebhookClientId}
+                          onChange={(e) => setNewWebhookClientId(e.target.value)}>
+                          <option value="">Select…</option>
+                          {mobileApi.clients.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-md-4">
+                        <label className="form-label small">Target URL</label>
+                        <input className="form-control form-control-sm" value={newWebhookUrl}
+                          onChange={(e) => setNewWebhookUrl(e.target.value)} placeholder="https://partner.example/webhooks/kc" />
+                      </div>
+                      <div className="col-md-3">
+                        <label className="form-label small d-block">Events</label>
+                        {(mobileApi.valid_events || []).map((ev) => (
+                          <div className="form-check" key={ev}>
+                            <input type="checkbox" className="form-check-input" id={`event-${ev}`}
+                              checked={newWebhookEvents.includes(ev)}
+                              onChange={() => setNewWebhookEvents((arr) => toggleInArray(arr, ev))} />
+                            <label className="form-check-label small" htmlFor={`event-${ev}`}>{ev}</label>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="col-md-2">
+                        <button className="btn btn-primary btn-sm w-100"
+                          disabled={webhookBusy || !newWebhookClientId || !newWebhookUrl.trim() || !newWebhookEvents.length}
+                          onClick={createMobileApiWebhook}>
+                          {webhookBusy ? 'Registering…' : 'Register'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-muted small mt-2">
+                      The target must be a public http/https address — internal/private network addresses are rejected.
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <hr className="my-4" />
+            <h6 className="mb-1">How this works</h6>
+            <ol className="small text-muted ps-3 mb-0" style={{ lineHeight: 2 }}>
+              <li>Create a client above and choose only the scopes it actually needs — <code>organizations:read</code> and <code>members:read</code> for pulling data, <code>members:write</code> for the partner to write back profile fields, <code>members:delete</code> for App Store/Play Store "delete my data" requests</li>
+              <li>The client_id and client_secret shown after creation won't be shown again — copy them immediately and send them to the partner over a secure channel (not email/Slack)</li>
+              <li>Register a webhook for that client to have KC push <code>member.created</code> / <code>member.updated</code> / <code>member.app_data_deleted</code> events out — the signing secret is shown once the same way, and is what the partner uses to verify each delivery is really from KC</li>
+              <li>Enable each organization this partner should see from that organization's own detail page — a client sees no orgs/members at all until at least one is enabled</li>
+              <li>If a secret is ever compromised, use <strong>Rotate secret</strong> — the old one stops working immediately, so the partner needs the new one right away</li>
+              <li>Full endpoint reference, request/response shapes, and the deletion-compliance flow: <code>docs/MOBILE-API.md</code> in the repo</li>
+            </ol>
           </div>
         </div>
       )}

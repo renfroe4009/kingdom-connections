@@ -86,6 +86,9 @@ const donationsRoutes     = require('./routes/donations');
 const membershipRoutes    = require('./routes/membership');
 const eventsRoutes        = require('./routes/events');
 const volunteersRoutes    = require('./routes/volunteers');
+const mobileApi                = require('./routes/mobileApi');
+const mobileApiAdminRoutes     = require('./routes/mobileApiAdmin');
+const startPpWebhookRetryCron  = require('./jobs/pp-webhook-retry-cron');
 const startBillingCron    = require('./jobs/billing-cron');
 const startAutomationsCron = require('./jobs/automations-cron');
 const startBatchReconCron = require('./jobs/batch-reconciliation-cron');
@@ -274,6 +277,14 @@ app.use('/api/membership',    membershipRoutes);
 app.use('/api/events',        eventsRoutes);
 app.use('/api/volunteers',    volunteersRoutes);
 
+// Praying Planet mobile API — server-to-server client-credentials auth,
+// deliberately separate from staff session auth (see middleware/apiClientAuth.js).
+app.post('/api/mobile/oauth/token', mobileApi.tokenLimiter, mobileApi.issueToken);
+app.use('/api/mobile/v1', mobileApi.router);
+// Staff-facing (session-authenticated) read-only status for the Integrations
+// settings page — a different auth model entirely from the two routes above.
+app.use('/api/mobile-api-admin', mobileApiAdminRoutes);
+
 // Public sitemap at the conventional root path (search engines expect it here)
 app.get('/sitemap.xml', (req, res, next) => { req.url = '/sitemap'; cmsRoutes(req, res, next); });
 
@@ -306,6 +317,9 @@ app.listen(PORT, async () => {
   }
   if (process.env.AUTOMATIONS_CRON !== 'off') {
     startAutomationsCron();
+  }
+  if (process.env.PP_WEBHOOK_RETRY_CRON !== 'off') {
+    startPpWebhookRetryCron();
   }
   seedSystemTemplates().catch((e) => console.error('[templates] seed error:', e.message));
   seedKnowledgeBase().catch((e) => console.error('[ai-kb] seed error:', e.message));
