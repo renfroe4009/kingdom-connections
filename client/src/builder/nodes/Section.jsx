@@ -30,6 +30,7 @@ export default function Section({
   fullBleed,
   sectionType,
   importedDesign,
+  layoutSection,
   children,
 }) {
   const ref = useNodeRef();
@@ -72,7 +73,7 @@ export default function Section({
     <section
       ref={ref}
       id={domId}
-      className={cx('bx-section', fullBleed && 'bx-section--full', importedDesign && 'bx-section--imported', overlay && backgroundImage && 'bx-section--overlay', customClass)}
+      className={cx('bx-section', fullBleed && 'bx-section--full', importedDesign && 'bx-section--imported', layoutSection && 'bx-section--layout', overlay && backgroundImage && 'bx-section--overlay', customClass)}
       style={style}
       data-section-type={sectionType || undefined}
     >
@@ -190,6 +191,9 @@ Section.craft = {
     // Set by the design importer. Blank padding then means "none" instead of
     // the 64px/40px default, since the imported markup brings its own spacing.
     importedDesign: false,
+    // The design's own section IS the grid/flex container (it has no inner
+    // wrapper of its own), so ours must not form a box inside it.
+    layoutSection: false,
   },
   related: { settings: SectionSettings },
   rules: {

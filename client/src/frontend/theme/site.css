@@ -142,6 +142,37 @@
 .bx-section--imported {
   padding-top: var(--bx-section-pt, 0px);
   padding-bottom: var(--bx-section-pb, 0px);
+  /* Side padding moves to the section itself — the inner wrapper below no
+     longer forms a box, so it cannot carry it. */
+  padding-inline: var(--bx-section-px, 0px);
+}
+
+/* Some design sections ARE the layout: `.founder-band` is itself the grid and
+   expects its photo and copy as DIRECT children. Our inner wrapper made the
+   grid see one child, so the photo sat above the text instead of beside it.
+   `display: contents` removes the wrapper's box while keeping the element, so
+   the design's own grid and flex rules reach the blocks inside.
+   Scoped to `--layout`, which the importer sets ONLY for a section that has no
+   inner container of its own. Applying it to every imported section also
+   flattened ones whose container is load-bearing — the home hero is a flex
+   box whose `.wrap` then centred the headline. */
+.bx-section--layout > .bx-section__inner {
+  display: contents;
+}
+
+/* A full-bleed section's inner wrapper must stay a plain full-width box. It
+   inherits `margin-inline: auto` from `.bx-section__inner`, which does nothing
+   while the section is a block — but the moment a design class makes that
+   section a flex or grid container (the home hero is `display: flex`), those
+   auto margins centre the wrapper and take the content with it.
+   Scoped to `--full` rather than `--imported`: sections imported before that
+   flag existed have no `--imported` class, and the home hero is one of them.
+   With `max-width: none` already set above, this is a no-op for a normal
+   block section — it only bites in a flex or grid parent. The design's own
+   `.wrap` inside still does the max-width and centring. */
+.bx-section--full > .bx-section__inner {
+  width: 100%;
+  margin-inline: 0;
 }
 .bx-section__inner {
   max-width: var(--bx-section-width, var(--bx-container));
