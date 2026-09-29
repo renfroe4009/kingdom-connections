@@ -22,7 +22,7 @@ const CARD_TITLE = /(^|\s)([a-z0-9-]*card__title|[a-z0-9-]*-title|h3)(\s|$)/i;
 
 // Tags that carry no layout of their own, so an element containing only these
 // is still a text leaf rather than a container.
-const INLINE_TAGS = /^(br|b|strong|i|em|span|small|sup|sub|u|s|a|code|abbr|time|mark)$/;
+const INLINE_TAGS = /^(br|b|strong|i|em|span|small|sup|sub|u|s|a|code|abbr|time|mark|cite|q|del|ins|kbd|var|samp|bdi|wbr)$/;
 
 /** Text content with entities decoded and whitespace collapsed. */
 const textOf = (node) => (node ? node.text.replace(/\s+/g, ' ').trim() : '');
@@ -262,6 +262,7 @@ function convertSectionHeader(node, make) {
     out.push(make('TextBlock', {
       html: desc.innerHTML.trim(),
       customClass: desc.getAttribute('class') || '',
+      tag: (desc.rawTagName || '').toLowerCase() === 'p' ? 'p' : '',
       size: '', align: '', color: '', maxWidth: '', customId: '',
     }));
   }
@@ -288,6 +289,14 @@ function convertCardGrid(node, make) {
   const usesBackgroundImages = children.some((child) => !child.querySelector('img')
     && child.querySelectorAll('*').some((el) => /background-image/i.test(el.getAttribute('style') || '')));
   if (usesBackgroundImages) return null;
+
+  // A Card Grid gives every item the SAME class, so cards that each carry
+  // their own modifier (`tier-card--partner-2500`, `--partner-5000`…) are not
+  // one uniform grid: converting them paints all three in the first card's
+  // colour. Let the generic rules handle those as individual columns, which
+  // keeps each card's class, name and price.
+  const cardClasses = new Set(children.map((c) => (c.getAttribute('class') || '').trim()));
+  if (cardClasses.size > 1) return null;
 
   const cards = [];
   let cardClass = '', mediaClass = '', bodyClass = '', eyebrowClass = '', titleClass = '', textClass = '', detailsClass = '', linkClass = '';
@@ -373,6 +382,20 @@ function convertKids(kids, make, depth = 0) {
     const tag = (kid.rawTagName || '').toLowerCase();
     const cls = kid.getAttribute('class') || '';
 
+    // A held label only becomes an eyebrow if a heading follows it. Anything
+    // else means it was a label in its own right — emit it HERE, in source
+    // order. It used to be flushed after the loop, which silently moved
+    // "Free weekly webinars" below the time it labels.
+    if (pendingLabel && !/^h[1-6]$/.test(tag)) {
+      out.push(make('TextBlock', {
+        html: pendingLabel.innerHTML.trim(),
+        customClass: pendingLabel.getAttribute('class') || '',
+        tag: (pendingLabel.rawTagName || '').toLowerCase() === 'p' ? 'p' : '',
+        size: '', align: '', color: '', maxWidth: '', customId: '',
+      }));
+      pendingLabel = null;
+    }
+
     // A small label immediately before a heading becomes that heading's eyebrow.
     if ((tag === 'span' || tag === 'p') && /label|eyebrow/i.test(cls) && !pendingLabel) {
       pendingLabel = kid;
@@ -395,21 +418,20 @@ function convertKids(kids, make, depth = 0) {
 
     if (tag === 'p') {
       out.push(make('TextBlock', {
-        html: kid.innerHTML.trim(), customClass: cls,
+        // tag: 'p' so a stylesheet rule written against the element itself
+        // (`.bio-layout__copy p { … }`) still matches after conversion.
+        html: kid.innerHTML.trim(), customClass: cls, tag: 'p',
         size: '', align: '', color: '', maxWidth: '', customId: '',
       }));
       continue;
     }
 
-    if (tag === 'a' && /btn|button|cta/i.test(cls)) {
-      out.push(make('ButtonBlock', {
-        label: textOf(kid),
-        link: { url: kid.getAttribute('href') || '', newTab: kid.getAttribute('target') === '_blank' },
-        importedClass: cls,
-        variant: 'solid', size: 'md', icon: '', iconPosition: 'right',
-        background: '', textColor: '', radius: '', fullWidth: false, align: 'flex-start',
-        customId: '', customClass: '',
-      }));
+    // Any standalone link is a button. It used to need a btn/cta class, which
+    // left design links like `<a class="more">Explore →</a>` as raw markup —
+    // an uneditable block for what is just a label and a URL. Inline links
+    // inside copy are unaffected: they live inside a <p>, not out here.
+    if (tag === 'a' && textOf(kid)) {
+      out.push(buttonSpec(kid, make)); // one place decides what a button carries
       continue;
     }
 
@@ -431,17 +453,22 @@ function convertKids(kids, make, depth = 0) {
       const title = kid.querySelector('h1, h2, h3, h4');
       const link = kid.querySelector('a');
       if (title) {
-        out.push(make('Heading', {
+        // The head's own parts go INSIDE a wrapper carrying its class, as in
+        // the design. The stylesheet centres a `.section-heading` through
+        // descendant rules (`.section-heading p`), so a heading that merely
+        // carries the class leaves its divider and intro line left-aligned.
+        const head = [];
+        head.push(make('Heading', {
           text: title.innerHTML.trim(),
           eyebrow: textOf(eyebrow),
           level: (title.rawTagName || 'h2').toLowerCase(),
           titleClass: title.getAttribute('class') || '',
           eyebrowClass: eyebrow?.getAttribute('class') || '',
-          customClass: cls,
+          customClass: '',
           size: '', weight: '', align: '', color: '', eyebrowColor: '', customId: '',
         }));
         if (link) {
-          out.push(make('ButtonBlock', {
+          head.push(make('ButtonBlock', {
             label: textOf(link),
             link: { url: link.getAttribute('href') || '', newTab: link.getAttribute('target') === '_blank' },
             importedClass: link.getAttribute('class') || '',
@@ -450,6 +477,13 @@ function convertKids(kids, make, depth = 0) {
             customId: '', customClass: '',
           }));
         }
+        // Everything else the head holds — the gold divider and the intro
+        // paragraph under it — used to be dropped on the floor here, leaving
+        // a heading with the sentence beneath it missing from the page.
+        const used = new Set([eyebrow, title, link].filter(Boolean));
+        const rest = kid.childNodes.filter((n) => n.nodeType === 1 && !used.has(n));
+        if (rest.length) head.push(...convertKids(rest, make, depth + 1));
+        out.push(columnSpec(kid, head, make));
         continue;
       }
     }
@@ -467,6 +501,27 @@ function convertKids(kids, make, depth = 0) {
     // Inline children don't disqualify it: `<div class="stat-label">TEXT<br>MORE
     // TEXT</div>` is still a text leaf, and the markup survives verbatim because
     // a Text block stores innerHTML.
+    // A bare inline label — `<strong>Believers</strong>` inside a tile. The
+    // stylesheet targets the element (`.serve-tile strong`), so the Text block
+    // renders as that same element rather than a div.
+    if (/^(strong|b|em|i|small|mark|code|span)$/.test(tag) && textOf(kid)
+        && !kid.childNodes.some((n) => n.nodeType === 1 && !INLINE_TAGS.test((n.rawTagName || '').toLowerCase()))) {
+      out.push(make('TextBlock', {
+        html: kid.innerHTML.trim(), customClass: cls, tag,
+        size: '', align: '', color: '', maxWidth: '', customId: '',
+      }));
+      continue;
+    }
+
+    // A decorative empty element (`<div class="gold-divider">`) is a Divider,
+    // not markup — the same call the section-level rule makes, applied here so
+    // one sitting between a heading and its copy converts too.
+    const separator = convertSeparator(kid, make);
+    if (separator) {
+      out.push(...separator);
+      continue;
+    }
+
     const kidElements = kid.childNodes.filter((n) => n.nodeType === 1);
     const inlineOnly = kidElements.every((el) => INLINE_TAGS.test((el.rawTagName || '').toLowerCase()));
     // A wrapper of nothing but links is an actions row, not a text leaf —
@@ -476,9 +531,40 @@ function convertKids(kids, make, depth = 0) {
       && kidElements.every((el) => (el.rawTagName || '').toLowerCase() === 'a');
     if (inlineOnly && !onlyAnchors && /^(div|span|li|footer|figcaption|blockquote|dt|dd|label)$/.test(tag) && textOf(kid)) {
       out.push(make('TextBlock', {
-        html: kid.innerHTML.trim(), customClass: cls,
+        // Keep the source element: `.mtn__quote` is a <blockquote> the
+        // stylesheet indents and quotes; rendering it as a <div> loses that.
+        html: kid.innerHTML.trim(), customClass: cls, tag: tag === 'div' ? '' : tag,
         size: '', align: '', color: '', maxWidth: '', customId: '',
       }));
+      continue;
+    }
+
+    // A bullet or numbered list. No List component exists, and a Text block
+    // already stores rich innerHTML — so it renders as the real <ul>/<ol>
+    // (keeping `.mtn__influence` styling and the list semantics screen readers
+    // need) while the client edits the items inline.
+    if (/^(ul|ol)$/.test(tag) && kidElements.length
+        && kidElements.every((el) => (el.rawTagName || '').toLowerCase() === 'li')) {
+      out.push(make('TextBlock', {
+        html: kid.innerHTML.trim(), customClass: cls, tag,
+        size: '', align: '', color: '', maxWidth: '', customId: '',
+      }));
+      continue;
+    }
+
+    // A wrapper holding nothing but one image — an avatar chip, a logo tile,
+    // an icon badge. The wrapper carries the design's frame (border, radius,
+    // padding) and the image its own sizing, so BOTH have to survive: the
+    // wrapper as a Column with its class, the image as a real Image block the
+    // client can swap. Emitting raw markup here is what left the 7 mountain
+    // avatars uneditable.
+    if (/^(span|div|figure|a)$/.test(tag) && kidElements.length === 1
+        && (kidElements[0].rawTagName || '').toLowerCase() === 'img' && !textOf(kid)) {
+      const img = kidElements[0];
+      const href = tag === 'a' ? kid.getAttribute('href') || '' : '';
+      out.push(cls
+        ? columnSpec(kid, [imageSpec(img, make, { url: href, newTab: kid.getAttribute('target') === '_blank' })], make)
+        : imageSpec(img, make, { url: href, newTab: kid.getAttribute('target') === '_blank' }));
       continue;
     }
 
@@ -486,14 +572,10 @@ function convertKids(kids, make, depth = 0) {
     const onlyChild = kidElements;
     if (tag === 'div' && onlyChild.length === 1 && (onlyChild[0].rawTagName || '').toLowerCase() === 'a') {
       const anchor = onlyChild[0];
-      out.push(make('ButtonBlock', {
-        label: textOf(anchor),
-        link: { url: anchor.getAttribute('href') || '', newTab: anchor.getAttribute('target') === '_blank' },
-        importedClass: anchor.getAttribute('class') || '',
-        variant: 'solid', size: 'md', icon: '', iconPosition: 'right',
-        background: '', textColor: '', radius: '', fullWidth: false, align: 'flex-start',
-        customId: '', customClass: '',
-      }));
+      // A CLASSED wrapper is part of the design, not just spacing —
+      // `.bio-profile__back` draws the divider above the button, so dropping
+      // it loses that rule. It survives as a Column carrying the same class.
+      out.push(cls ? columnSpec(kid, [buttonSpec(anchor, make)], make) : buttonSpec(anchor, make));
       continue;
     }
 
@@ -522,10 +604,24 @@ function convertKids(kids, make, depth = 0) {
     // level deeper than the section container — which is most of a real design —
     // collapses into a single uneditable blob.
     if (depth < 3 && RECURSE_TAGS.test(tag) && kidElements.length
-        && kid.querySelector('h1, h2, h3, h4, h5, h6, p, img, a')) {
+        && kid.querySelector('h1, h2, h3, h4, h5, h6, p, img, a, ul, ol, blockquote, iframe, video')) {
       let nested = null;
       for (const rule of CORE_RULES) { nested = rule(kid, make); if (nested) break; }
-      out.push(columnSpec(kid, nested || convertContent(kid, make, depth + 1), make));
+      if (nested) {
+        // Most rules already reproduce this wrapper themselves (convertSplit
+        // puts the node's classes on its Row, the grid rules on the CardGrid).
+        // Wrapping that in a Column with the SAME class emits the element
+        // twice, and a nested `.image-card` inside an `.image-card` collapses
+        // to half width — so only wrap when the rule didn't carry it.
+        const nodeCls = cls.trim();
+        const carried = nodeCls && nested.some((spec) => {
+          const p = spec?.props || {};
+          return [p.importedClass, p.customClass, p.gridClass].some((v) => (v || '').trim() === nodeCls);
+        });
+        out.push(...(carried ? nested : [columnSpec(kid, nested, make)]));
+      } else {
+        out.push(columnSpec(kid, convertContent(kid, make, depth + 1), make));
+      }
       continue;
     }
 
@@ -542,6 +638,7 @@ function convertKids(kids, make, depth = 0) {
     // stays editable and the design keeps styling it.
     out.push(make('TextBlock', {
       html: pendingLabel.innerHTML.trim(), customClass: pendingLabel.getAttribute('class') || '',
+      tag: (pendingLabel.rawTagName || '').toLowerCase() === 'p' ? 'p' : '',
       size: '', align: '', color: '', maxWidth: '', customId: '',
     }));
   }
@@ -577,13 +674,17 @@ function convertSplit(node, make) {
   const columns = kids.map((kid, index) => {
     if (index === contentIndex) return column(kid, convertContent(kid, make));
     if (index === mediaIndex && mediaIsJustAnImage) {
-      return column(kid, [make('ImageBlock', {
-        src: img.getAttribute('src') || '', alt: img.getAttribute('alt') || '',
-        bare: true, caption: '', fit: '', radius: '', ratio: '', maxWidth: '',
-        link: { url: '', newTab: false }, customId: '', customClass: '',
-      })]);
+      // imageSpec, not a hand-rolled ImageBlock: it carries the image's own
+      // class across. `.phones-stack-img` is what sizes the app screenshot,
+      // and without it the image renders at its natural 652px and pushes the
+      // copy beside it off the grid.
+      return column(kid, [imageSpec(img, make)]);
     }
-    return column(kid, [make('HtmlBlock', { markup: kid.innerHTML.trim(), runScripts: false, customId: '', customClass: '' })]);
+    // A richer media side (photo + caption lines, badges) still converts
+    // child by child — convertContent falls back to HTML per child, so
+    // nothing is lost, and the client gets editable blocks instead of one
+    // opaque markup blob.
+    return column(kid, convertContent(kid, make));
   });
 
   return [make('Row', {
@@ -712,12 +813,55 @@ function convertVideoEmbed(node, make) {
 const RECURSE_TAGS = /^(div|section|article|aside|blockquote|figure|header|footer|li)$/;
 
 function buttonSpec(anchor, make) {
+  // A link can be a picture tile — `<a><span>Family</span><img …></a>` in the
+  // mountains jump bar. Carrying the image across keeps the design intact and
+  // still gives the client label/link/image fields instead of raw markup.
+  const img = anchor.querySelector('img');
+  const kids = anchor.childNodes.filter((n) => n.nodeType === 1);
+  const imgIndex = img ? kids.indexOf(img) : -1;
+  const textIndex = kids.findIndex((el) => el !== img && textOf(el));
+
+  // Some links are built from real structure rather than a label: an app-store
+  // badge is `<a><svg/><span><small>Download on the</small><strong>App
+  // Store</strong></span></a>`. Flattening that to text loses the logo and
+  // runs the two lines together ("Download on theApp Store"), so the markup
+  // is kept as the label and rendered as HTML.
+  const onlyImage = kids.length === 1 && kids[0] === img;
+  const structured = kids.length > 0 && !onlyImage && kids.some((el) => {
+    const name = (el.rawTagName || '').toLowerCase();
+    return name === 'svg' || name === 'picture' || name === 'img'
+      || el.childNodes.some((n) => n.nodeType === 1);
+  });
+  if (structured) {
+    return make('ButtonBlock', {
+      label: anchor.innerHTML.trim(),
+      labelRich: true,
+      link: { url: anchor.getAttribute('href') || '', newTab: anchor.getAttribute('target') === '_blank' },
+      importedClass: anchor.getAttribute('class') || '',
+      importedStyle: anchor.getAttribute('style') || '',
+      bare: !(anchor.getAttribute('class') || '').trim(),
+      variant: 'solid', size: 'md', icon: '', iconPosition: 'right',
+      background: '', textColor: '', radius: '', fullWidth: false, align: 'flex-start',
+      image: '', imageAlt: '', imagePosition: 'after',
+      customId: '', customClass: '',
+    });
+  }
+
   return make('ButtonBlock', {
     label: textOf(anchor),
     link: { url: anchor.getAttribute('href') || '', newTab: anchor.getAttribute('target') === '_blank' },
     importedClass: anchor.getAttribute('class') || '',
+    // Designs put one-off spacing in an inline style; dropping it shifts the
+    // link out of place even though the class still styles it.
+    importedStyle: anchor.getAttribute('style') || '',
+    // No class of its own means the design styles it through its container
+    // (`.mtn-jump__row a`); our button classes would fight that.
+    bare: !(anchor.getAttribute('class') || '').trim(),
     variant: 'solid', size: 'md', icon: '', iconPosition: 'right',
     background: '', textColor: '', radius: '', fullWidth: false, align: 'flex-start',
+    image: img ? (img.getAttribute('src') || '') : '',
+    imageAlt: img ? (img.getAttribute('alt') || '') : '',
+    imagePosition: img && textIndex > -1 && imgIndex < textIndex ? 'before' : 'after',
     customId: '', customClass: '',
   });
 }
@@ -739,6 +883,8 @@ function columnSpec(node, children, make) {
   return make('Column', {
     importedClass: node.getAttribute('class') || '',
     importedStyle: node.getAttribute('style') || '',
+    // No class of its own: a structural <div> the design's own grid lays out.
+    bare: !(node.getAttribute('class') || '').trim(),
     span: 12, spanTablet: '', spanMobile: '', padding: {}, gap: 0,
     verticalAlign: 'flex-start', horizontalAlign: 'stretch', textAlign: '',
     customId: '', customClass: '',

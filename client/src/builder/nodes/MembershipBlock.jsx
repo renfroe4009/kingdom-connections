@@ -29,6 +29,7 @@ import Modal from '../../components/Modal.jsx';
 import MembershipCheckout from '../../frontend/components/MembershipCheckout.jsx';
 import { FieldGroup, NumberField, TextField, TextareaField, ToggleField } from '../fields/index.jsx';
 import { IDENTITY_DEFAULTS, cx, useDomIdentity, useNodeRef } from './nodeUtils.js';
+import { sanitizeHtml } from '../../utils/sanitizeHtml.js';
 
 function formatPrice(price) {
   return `$${(Number(price) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -90,20 +91,41 @@ export default function MembershipBlock({ heading, blurb, footnoteText, thankYou
       ) : !visibleTiers.length ? (
         <div className="bx-editor-note">No membership tiers are published yet.</div>
       ) : (
-        <div className="join-grid">
+        // `founding-grid` when the tiers carry artwork — the design lays those
+        // photo cards out on their own grid, with room for the image above.
+        <div className={cx('join-grid', visibleTiers.some((t) => (t.benefits_json || {}).image) && 'founding-grid')}>
           {visibleTiers.map((tier) => {
             const benefits = tier.benefits_json || {};
             const features = Array.isArray(benefits.features) ? benefits.features : [];
             const featured = Boolean(benefits.badge);
             const ctaLabel = benefits.cta || String(ctaTemplate || 'Select {name}').replace('{name}', tier.name);
+            // The design gives every tier its own colour through a modifier
+            // class keyed on the tier slug (`tier-card--ruby` is red, with
+            // matching bullet diamonds), and the founding tiers add a photo.
+            // Without these the cards render in one flat house style.
+            const slug = tier.slug || String(tier.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            const art = benefits.image || '';
             return (
-              <article className={cx('tier-card', featured && 'tier-card--featured')} key={tier.id}>
+              <article
+                className={cx('tier-card', art && 'founding-card', featured && 'tier-card--featured', slug && `tier-card--${slug}`)}
+                key={tier.id}
+              >
+                {art && (
+                  <div className="founding-card__art">
+                    <img src={art} alt="" loading="lazy" />
+                  </div>
+                )}
                 <div className="tier-card__name">{tier.name}</div>
                 <div className="tier-card__price">{formatPrice(tier.price)}</div>
-                {tier.description && <p>{tier.description}</p>}
+                {/* A photo card goes straight from the price to the benefits,
+                    as the design does. These tiers repeat their first benefit
+                    as the description, and the paragraph inherits the dark
+                    section's white text — so it rendered as an empty band on
+                    a white card. */}
+                {tier.description && !art && <p>{tier.description}</p>}
                 {showFeatures && features.length > 0 && (
-                  <ul className="list-check" style={{ textAlign: 'left', display: 'inline-block' }}>
-                    {features.map((f, i) => <li key={i}>{f}</li>)}
+                  <ul className="list-diamond">
+                    {features.map((f, i) => <li key={i} dangerouslySetInnerHTML={{ __html: sanitizeHtml(f) }} />)}
                   </ul>
                 )}
                 <button

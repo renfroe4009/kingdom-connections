@@ -544,8 +544,13 @@ export default function PublicLayout({ children, preview = false }) {
         Skip to main content
       </a>
 
-      {/* ── Header wrapper ── */}
-      <div role="banner">
+      {/* ── Header wrapper ──
+          The class is load-bearing: the design makes `.site-header` sticky,
+          but sticky is relative to the nearest scrolling ancestor and this
+          wrapper is only as tall as the header — so the header scrolled away
+          with it. `.site-banner` moves the sticking to the wrapper, which
+          also keeps the announcement strip pinned when one is shown. */}
+      <div role="banner" className="site-banner">
 
         {/* Announcement strip — content comes from Web Settings. With no
             message and no phone number there's nothing to say, so it's hidden

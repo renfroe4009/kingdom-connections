@@ -12,12 +12,16 @@ const SPAN_OPTIONS = [{ value: '', label: 'Auto / inherit' }].concat(
   Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: `${i + 1} / 12` })),
 );
 
-export default function Column({ span, spanTablet, spanMobile, padding, gap, verticalAlign, horizontalAlign, textAlign, importedClass, importedStyle, children }) {
+export default function Column({ span, spanTablet, spanMobile, padding, gap, verticalAlign, horizontalAlign, textAlign, importedClass, importedStyle, bare, children }) {
   const ref = useNodeRef();
   const { domId, customClass } = useDomIdentity('col');
 
   // See Row: an imported column is positioned by the design's own CSS.
-  const imported = Boolean(importedClass);
+  // `bare` is the unclassed wrapper case — a plain <div> the design's parent
+  // grid places by source order. Giving it `bx-col` forces a 12-column span,
+  // which makes every such cell take a full row instead of sitting side by
+  // side, so it renders as the plain div it was.
+  const imported = Boolean(importedClass) || bare;
 
   // Some designs put the rule in the class and the per-cell values in inline
   // custom properties, so an imported column has to keep the source element's
@@ -122,6 +126,8 @@ Column.craft = {
     textAlign: '',
     importedClass: '',
     importedStyle: '',
+    // Set by the importer for an unclassed structural <div> (see above).
+    bare: false,
   },
   related: { settings: ColumnSettings },
   rules: {
