@@ -259,14 +259,25 @@ function buildTree(chunks) {
     // own container CSS keeps doing that job.
     const rowId = nextId('row');
     const colId = nextId('col');
-    nodes[sectionId].nodes = [rowId];
+    // A section with NO inner container of its own is the layout itself:
+    // `.founder-band` is the grid and expects its photo and copy as direct
+    // children. Wrapping them in a Row and Column gave that grid a single
+    // child, so the photo stacked above the text. In that case the blocks
+    // hang straight off the Section.
+    const sectionIsLayout = !chunk.innerClass;
+    nodes[sectionId].nodes = sectionIsLayout ? [] : [rowId];
+    // Flagged on the node so the renderer drops its inner wrapper for THIS
+    // section only. A blanket rule would also flatten sections whose design
+    // container is doing real work — the home hero centres itself that way,
+    // and flattening it moved the headline to the middle of the page.
+    nodes[sectionId].props.layoutSection = sectionIsLayout;
     nodes[sectionId].props.customClass = chunk.containerClass || '';
     // Conversion replaces the design's own <section> with this node, so its
     // id is not duplicated anywhere — and it MUST come across, or every
     // in-page anchor pointing at it (`<a href="#family">`) stops working.
     nodes[sectionId].props.customId = chunk.id || '';
 
-    nodes[rowId] = {
+    if (!sectionIsLayout) nodes[rowId] = {
       type: { resolvedName: 'Row' },
       isCanvas: true,
       displayName: 'Row',
@@ -292,7 +303,9 @@ function buildTree(chunks) {
     // Without a design container the Column stays, since something has to
     // hold the blocks.
     const useRowAsParent = Boolean(chunk.innerClass);
-    if (useRowAsParent) {
+    if (sectionIsLayout) {
+      // nothing between the Section and its blocks
+    } else if (useRowAsParent) {
       nodes[rowId].nodes = [];
     } else {
       nodes[colId] = {
@@ -332,7 +345,8 @@ function buildTree(chunks) {
       return nodeId;
     };
 
-    for (const spec of chunk.children) addSpec(spec, useRowAsParent ? rowId : colId);
+    const parentForBlocks = sectionIsLayout ? sectionId : (useRowAsParent ? rowId : colId);
+    for (const spec of chunk.children) addSpec(spec, parentForBlocks);
 
     rootChildren.push(sectionId);
   });
