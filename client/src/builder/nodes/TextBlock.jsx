@@ -3,7 +3,11 @@ import { ChoiceField, ColorField, FieldGroup, TextField, TextareaField } from '.
 import InlineText from './InlineText.jsx';
 import { IDENTITY_DEFAULTS, cssVars, cx, styleOverrides, useDomIdentity, useIsEditing, useNodeRef } from './nodeUtils.js';
 
-export default function TextBlock({ html, size, align, color, maxWidth }) {
+// `tag` exists for imported designs: a stylesheet that says
+// `.bio-layout__copy p { … }` stops matching the moment the paragraph becomes
+// a <div>, so the importer records which element the text came from. Blocks
+// added in the builder leave it blank and stay divs, as before.
+export default function TextBlock({ html, size, align, color, maxWidth, tag }) {
   const ref = useNodeRef();
   const editing = useIsEditing();
   const { domId, customClass } = useDomIdentity('text');
@@ -12,7 +16,7 @@ export default function TextBlock({ html, size, align, color, maxWidth }) {
   return (
     <InlineText
       ref={ref}
-      as="div"
+      as={tag || 'div'}
       id={domId}
       className={cx('bx-text', customClass)}
       style={{
@@ -82,6 +86,9 @@ TextBlock.craft = {
     align: '',
     color: '',
     maxWidth: '',
+    // Element to render as. Blank = <div>; the design importer sets 'p' when
+    // the text came from a paragraph, so element-based CSS keeps matching.
+    tag: '',
   },
   related: { settings: TextSettings },
 };

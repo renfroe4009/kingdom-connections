@@ -128,6 +128,15 @@
   background-position: center;
   color: var(--bx-section-fg, inherit);
 }
+/* Header wrapper — see PublicLayout's banner comment. The design's own
+   `.site-header { position: sticky }` cannot work from inside a wrapper that
+   is exactly header-height, so the wrapper does the sticking. */
+.site-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
 /* Imported design sections: blank padding fields add nothing — the imported
    markup carries its own spacing. A value typed in the panel still applies. */
 .bx-section--imported {

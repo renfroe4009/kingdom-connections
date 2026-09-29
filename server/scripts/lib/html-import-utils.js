@@ -62,7 +62,7 @@ function slugFor(file) {
 }
 
 // Chrome that belongs to Web Settings, not to a page.
-const CHROME_TAGS = new Set(['header', 'footer', 'nav', 'script', 'noscript', 'style']);
+const CHROME_TAGS = new Set(['header', 'footer', 'script', 'noscript', 'style']);
 
 // Pages without a <main> fall back to <body>, where the header and footer are
 // often plain <div>s. Match those by class/id so they don't become sections.
@@ -73,6 +73,12 @@ function isChrome(node) {
   if (CHROME_TAGS.has(tag)) return true;
   const cls = node.getAttribute('class') || '';
   const id = node.getAttribute('id') || '';
+  // A <nav> is only site navigation when it says so. `<nav class="mtn-jump">`
+  // — the row of icons that jumps to each mountain — is page content, and
+  // skipping it silently dropped a whole band from the imported page. An
+  // unlabelled <nav> is still treated as chrome: on a page with no <main>,
+  // that is what the site's own menu looks like.
+  if (tag === 'nav') return (!cls && !id) || CHROME_PATTERN.test(cls) || CHROME_PATTERN.test(id);
   return CHROME_PATTERN.test(cls) || CHROME_PATTERN.test(id);
 }
 
@@ -121,7 +127,26 @@ function parsePageHtml(raw, fallbackTitle, { convert = true } = {}) {
     // by class, so the attribute has to survive the import or those rules
     // stop matching and the section renders unstyled.
     const sectionType = node.getAttribute('data-section-type') || '';
-    const chunk = { html, id, label: id || cls || tag, sectionType };
+    // data-section-id is the design's own stable handle for a section
+    // ("connect-mtn-01"), which --section matches against.
+    const sectionId = node.getAttribute('data-section-id') || '';
+    const classList = (node.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+    const chunk = { html, id, label: id || cls || tag, sectionType, sectionId, classList };
+
+    // Unconverted sections keep their markup verbatim, but the design's own
+    // wrapper (<section class="page-hero">) must sit on the Section NODE, not
+    // inside it: the Section renders a max-width inner container, so a
+    // full-bleed hero nested inside it becomes a narrow box. Hoist the
+    // wrapper's class/id onto the Section and keep only its contents — the
+    // same shape conversion already produces via containerClass.
+    if (['section', 'div', 'article', 'aside', 'header'].includes(tag)) {
+      const inner = absolutizeUrls(rewriteInternalLinks(node.innerHTML)).trim();
+      if (inner) {
+        chunk.outerClass = node.getAttribute('class') || '';
+        chunk.outerId = id;
+        chunk.innerHtml = inner;
+      }
+    }
 
     if (convert) {
       // Re-parse the URL-corrected markup so converted components pick up the
@@ -190,11 +215,15 @@ function buildTree(chunks) {
         // Left unset (not 0) so the panel fields start blank and no inline
         // padding overrides the design's own spacing. importedDesign keeps
         // blank meaning "no extra padding" rather than site.css's 64px default.
-        paddingTop: null,
-        paddingBottom: null,
+        // Empty strings, never null: a null prop can be dropped on the way
+        // through the editor, and a MISSING prop falls back to the Section's
+        // 64px/24px defaults — which is exactly the inline padding this is
+        // meant to avoid.
+        paddingTop: '',
+        paddingBottom: '',
         paddingTopMobile: '',
         paddingBottomMobile: '',
-        paddingX: null,
+        paddingX: '',
         maxWidth: '',
         fullBleed: true,
         importedDesign: true,
@@ -213,8 +242,14 @@ function buildTree(chunks) {
         hidden: false,
         nodes: [],
         linkedNodes: {},
-        props: { customId: '', customClass: '', markup: chunk.html, runScripts: false },
+        props: { customId: '', customClass: '', markup: chunk.innerHtml || chunk.html, runScripts: false },
       };
+      // With the wrapper hoisted, its id is no longer duplicated in the
+      // document, so it can carry the anchor target (#bio) the design expects.
+      if (chunk.innerHtml) {
+        nodes[sectionId].props.customClass = chunk.outerClass || '';
+        nodes[sectionId].props.customId = chunk.outerId || '';
+      }
       rootChildren.push(sectionId);
       return;
     }
@@ -226,6 +261,10 @@ function buildTree(chunks) {
     const colId = nextId('col');
     nodes[sectionId].nodes = [rowId];
     nodes[sectionId].props.customClass = chunk.containerClass || '';
+    // Conversion replaces the design's own <section> with this node, so its
+    // id is not duplicated anywhere — and it MUST come across, or every
+    // in-page anchor pointing at it (`<a href="#family">`) stops working.
+    nodes[sectionId].props.customId = chunk.id || '';
 
     nodes[rowId] = {
       type: { resolvedName: 'Row' },
@@ -245,20 +284,32 @@ function buildTree(chunks) {
       },
     };
 
-    nodes[colId] = {
-      type: { resolvedName: 'Column' },
-      isCanvas: true,
-      displayName: 'Column',
-      custom: {},
-      parent: sectionId ? rowId : null,
-      hidden: false,
-      nodes: [],
-      linkedNodes: {},
-      props: {
-        customId: '', customClass: '', span: 12, spanTablet: '', spanMobile: '',
-        padding: {}, gap: 0, verticalAlign: 'flex-start', horizontalAlign: 'stretch', textAlign: '',
-      },
-    };
+    // When the Row already carries the design's own container (`.wrap`), that
+    // container must be the DIRECT parent of the converted blocks: its flex
+    // gap, centring and alignment only reach its own children. An extra
+    // Column in between turns all of them into one stretched `bx-col` child —
+    // which is what made a centred auto-width button span the full row.
+    // Without a design container the Column stays, since something has to
+    // hold the blocks.
+    const useRowAsParent = Boolean(chunk.innerClass);
+    if (useRowAsParent) {
+      nodes[rowId].nodes = [];
+    } else {
+      nodes[colId] = {
+        type: { resolvedName: 'Column' },
+        isCanvas: true,
+        displayName: 'Column',
+        custom: {},
+        parent: rowId,
+        hidden: false,
+        nodes: [],
+        linkedNodes: {},
+        props: {
+          customId: '', customClass: '', span: 12, spanTablet: '', spanMobile: '',
+          padding: {}, gap: 0, verticalAlign: 'flex-start', horizontalAlign: 'stretch', textAlign: '',
+        },
+      };
+    }
 
     // Rules can emit nested structures (Row → Column → components), so build
     // the subtree recursively rather than assuming one flat level.
@@ -281,7 +332,7 @@ function buildTree(chunks) {
       return nodeId;
     };
 
-    for (const spec of chunk.children) addSpec(spec, colId);
+    for (const spec of chunk.children) addSpec(spec, useRowAsParent ? rowId : colId);
 
     rootChildren.push(sectionId);
   });

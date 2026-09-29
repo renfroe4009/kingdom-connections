@@ -107,7 +107,7 @@ function diffStylesheets(newCss, existingCss) {
   for (const rule of newIndex.values()) {
     const match = existingIndex.get(rule.key);
     if (!match) {
-      added.push({ selector: rule.selector, source: rule.source });
+      added.push({ selector: rule.selector, source: rule.source, scope: rule.scope });
     } else if (match.signature === rule.signature) {
       reused.push({ selector: rule.selector });
     } else {
@@ -115,7 +115,26 @@ function diffStylesheets(newCss, existingCss) {
     }
   }
 
-  const appendCss = added.map((a) => a.source).join('\n\n');
+  // A rule nested in an at-rule (e.g. @media (max-width: 768px)) must be
+  // re-emitted INSIDE that at-rule. Appending its source alone would turn a
+  // mobile-only rule into a global one and silently change every breakpoint.
+  // Rules are grouped by their scope chain so one wrapper serves all of them.
+  const byScope = new Map();
+  for (const a of added) {
+    const key = (a.scope || []).join(' > ');
+    if (!byScope.has(key)) byScope.set(key, { scope: a.scope || [], rules: [] });
+    byScope.get(key).rules.push(a.source);
+  }
+  const appendCss = [...byScope.values()]
+    .map(({ scope, rules }) => {
+      let body = rules.join('\n\n');
+      // Wrap innermost-first so the outermost at-rule ends up outside.
+      for (let i = scope.length - 1; i >= 0; i -= 1) {
+        body = `@${scope[i]} {\n${body.split('\n').map((l) => (l ? `  ${l}` : l)).join('\n')}\n}`;
+      }
+      return body;
+    })
+    .join('\n\n');
 
   return { reused, added, conflicts, appendCss };
 }

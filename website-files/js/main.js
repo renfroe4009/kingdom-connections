@@ -308,7 +308,20 @@
   }
 
   /* ---------- Contact / join form (client-side only) ---------- */
+  function initTopicFromQuery() {
+    var select = qs("#topic");
+    if (!select) return;
+    var params = new URLSearchParams(window.location.search);
+    var topic = (params.get("topic") || "").toLowerCase();
+    if (!topic) return;
+    var match = Array.prototype.find.call(select.options, function (opt) {
+      return opt.value.toLowerCase() === topic || opt.text.toLowerCase().indexOf(topic) !== -1;
+    });
+    if (match) select.value = match.value;
+  }
+
   function initForms() {
+    initTopicFromQuery();
     qsa("[data-form]").forEach(function (form) {
       form.addEventListener("submit", function (e) {
         e.preventDefault();
