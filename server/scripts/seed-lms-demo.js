@@ -67,8 +67,6 @@ async function findCourseBySlug(store, slug) {
     bodyFormat: 'markdown',
     estimatedMinutes: 8,
     body: [
-      '# Our Story',
-      '',
       "We started as a handful of families meeting in a living room, convinced that church should feel like **family** before it feels like an institution.",
       '',
       "Today we gather across several campuses, but the heart is the same: real relationships, honest faith, and a place for everyone to belong.",
@@ -83,8 +81,6 @@ async function findCourseBySlug(store, slug) {
     bodyFormat: 'markdown',
     estimatedMinutes: 12,
     body: [
-      '# What We Believe',
-      '',
       'A short orientation to our core convictions — not an exhaustive statement of faith, but enough to know where we stand.',
       '',
       '- Scripture as our guide',
@@ -132,7 +128,7 @@ async function findCourseBySlug(store, slug) {
     kind: 'reading',
     bodyFormat: 'markdown',
     estimatedMinutes: 10,
-    body: '# Finding Your Place\n\nServing teams, small groups, and the next class you can take — a map of where to go next.',
+    body: 'Serving teams, small groups, and the next class you can take — a map of where to go next.',
     keyPoints: ['Small groups meet weekly, year-round', 'Every serving team has a trial month, no long commitment up front'],
   });
   await ensureLesson(involvedId, {
@@ -140,7 +136,7 @@ async function findCourseBySlug(store, slug) {
     kind: 'assignment',
     bodyFormat: 'markdown',
     estimatedMinutes: 5,
-    body: '# Next Steps\n\nTalk to a staff member about joining a small group this month, and mark this lesson complete once you have.',
+    body: 'Talk to a staff member about joining a small group this month, and mark this lesson complete once you have.',
   });
 
   console.log('--- Publish course ---');
