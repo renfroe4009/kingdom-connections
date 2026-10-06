@@ -81,6 +81,9 @@ import PortalRegister from './admin/pages/portal/PortalRegister.jsx';
 import PortalVerifyEmail from './admin/pages/portal/PortalVerifyEmail.jsx';
 import PortalGiving from './admin/pages/portal/PortalGiving.jsx';
 import PortalMembership from './admin/pages/portal/PortalMembership.jsx';
+import PortalLearning from './admin/pages/portal/PortalLearning.jsx';
+import PortalCourseView from './admin/pages/portal/PortalCourseView.jsx';
+import PortalLessonView from './admin/pages/portal/PortalLessonView.jsx';
 import PortalEvents from './admin/pages/portal/PortalEvents.jsx';
 import PortalOrders from './admin/pages/portal/PortalOrders.jsx';
 import WebsitePagesPage from './vb/admin/WebsitePagesPage.jsx';
@@ -196,6 +199,9 @@ export default function App() {
         <Route path="dashboard"          element={<PortalDashboard />} />
         <Route path="giving"             element={<PortalGiving />} />
         <Route path="membership"         element={<PortalMembership />} />
+        <Route path="learning"                     element={<PortalLearning />} />
+        <Route path="learning/:courseSlug"          element={<PortalCourseView />} />
+        <Route path="learning/:courseSlug/:lessonSlug" element={<PortalLessonView />} />
         <Route path="events"             element={<PortalEvents />} />
         <Route path="orders"             element={<PortalOrders />} />
         <Route path="invoices"           element={<PortalInvoices />} />
