@@ -1,0 +1,62 @@
+{
+  "name": "@kcc/lms",
+  "version": "0.1.0",
+  "description": "A learning-management module: courses, cohorts, lessons, progress and assessments. Runs on PostgreSQL or MySQL. Built to be merged into an existing application.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./store": "./src/store.ts",
+    "./ports": "./src/ports.ts",
+    "./schema/pg": "./src/schema/pg.ts",
+    "./schema/mysql": "./src/schema/mysql.ts"
+  },
+  "files": [
+    "src",
+    "migrations",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src scripts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "probe": "npm run probe:entitlement && npm run probe:progress && npm run probe:assessment && npm run probe:catalogue && npm run probe:authoring",
+    "probe:entitlement": "tsx scripts/probe-entitlement.ts",
+    "probe:progress": "tsx scripts/probe-progress.ts",
+    "probe:assessment": "tsx scripts/probe-assessment.ts",
+    "probe:catalogue": "tsx scripts/probe-catalogue.ts",
+    "probe:authoring": "tsx scripts/probe-authoring.ts",
+    "probe:pg": "ENGINE=postgres npm run probe",
+    "probe:mysql": "ENGINE=mysql npm run probe",
+    "probe:both": "npm run probe:pg && npm run probe:mysql"
+  },
+  "peerDependencies": {
+    "drizzle-orm": ">=0.38 <1",
+    "zod": ">=3.23 <5"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "@types/pg": "8.11.10",
+    "drizzle-orm": "0.45.2",
+    "eslint": "9.18.0",
+    "pg": "8.13.1",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "typescript-eslint": "8.20.0",
+    "zod": "3.24.1",
+    "mysql2": "3.11.5"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.5"
+  },
+  "peerDependenciesMeta": {
+    "mysql2": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  }
+}
