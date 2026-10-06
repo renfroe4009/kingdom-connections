@@ -39,6 +39,8 @@ import FundsList from './admin/pages/FundsList.jsx';
 import TextToGiveSettingsPage from './admin/pages/TextToGiveSettingsPage.jsx';
 import MembersList from './admin/pages/MembersList.jsx';
 import MembershipTiersList from './admin/pages/MembershipTiersList.jsx';
+import LmsCoursesPage from './admin/pages/LmsCoursesPage.jsx';
+import LmsCohortsPage from './admin/pages/LmsCohortsPage.jsx';
 import EventsList from './admin/pages/EventsList.jsx';
 import EventDetail from './admin/pages/EventDetail.jsx';
 import EventCheckIn from './admin/pages/EventCheckIn.jsx';
@@ -246,6 +248,9 @@ export default function App() {
         <Route path="events/:id/checkin"        element={<PermissionRoute perm="events.checkin"><EventCheckIn /></PermissionRoute>} />
         <Route path="volunteers"                element={<PermissionRoute perm="volunteers.read"><VolunteersList /></PermissionRoute>} />
         <Route path="volunteers/:contactId"     element={<PermissionRoute perm="volunteers.read"><VolunteerDetail /></PermissionRoute>} />
+
+        <Route path="lms/courses"               element={<PermissionRoute perm="lms.read"><LmsCoursesPage /></PermissionRoute>} />
+        <Route path="lms/cohorts"               element={<PermissionRoute perm="lms.read"><LmsCohortsPage /></PermissionRoute>} />
 
         <Route path="recurring-invoices"        element={<PermissionRoute perm="invoices.read"><RecurringInvoicesList /></PermissionRoute>} />
         <Route path="recurring-invoices/:id"    element={<PermissionRoute perm="invoices.read"><RecurringInvoiceDetail /></PermissionRoute>} />

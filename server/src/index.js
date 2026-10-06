@@ -85,6 +85,7 @@ const checkoutRoutes      = require('./routes/checkout');
 const commerceSettingsRoutes = require('./routes/commerce-settings');
 const donationsRoutes     = require('./routes/donations');
 const membershipRoutes    = require('./routes/membership');
+const lmsRoutes           = require('./routes/lms');
 const eventsRoutes        = require('./routes/events');
 const volunteersRoutes    = require('./routes/volunteers');
 const mobileApi                = require('./routes/mobileApi');
@@ -279,6 +280,7 @@ app.use('/api/checkout',      checkoutRoutes);
 app.use('/api/commerce-settings', commerceSettingsRoutes);
 app.use('/api/donations',     donationsRoutes);
 app.use('/api/membership',    membershipRoutes);
+app.use('/api/lms',           lmsRoutes);
 app.use('/api/events',        eventsRoutes);
 app.use('/api/volunteers',    volunteersRoutes);
 
