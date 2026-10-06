@@ -130,7 +130,7 @@ export default function LmsCoursesPage() {
                 {rows.map((c) => (
                   <tr key={c.id}>
                     <td>
-                      <div className="fw-semibold">{c.title}</div>
+                      <Link to={`/admin/lms/courses/${c.id}`} className="fw-semibold text-decoration-none">{c.title}</Link>
                       {c.subtitle && <div className="text-muted small">{c.subtitle}</div>}
                     </td>
                     <td className="text-capitalize">{c.level}</td>
@@ -140,8 +140,11 @@ export default function LmsCoursesPage() {
                       </span>
                     </td>
                     <td className="text-end">
-                      {can('lms.write') && (
-                        <div className="d-flex gap-1 justify-content-end flex-wrap">
+                      <div className="d-flex gap-1 justify-content-end flex-wrap">
+                        <Link to={`/admin/lms/courses/${c.id}`} className="btn btn-sm btn-light" title="Modules & lessons">
+                          <iconify-icon icon="solar:widget-5-line-duotone"></iconify-icon>
+                        </Link>
+                        {can('lms.write') && (<>
                           <button className="btn btn-sm btn-light" onClick={() => openEdit(c)} title="Edit">
                             <iconify-icon icon="solar:pen-line-duotone"></iconify-icon>
                           </button>
@@ -165,8 +168,8 @@ export default function LmsCoursesPage() {
                               <iconify-icon icon="solar:restart-line-duotone"></iconify-icon>
                             </button>
                           )}
-                        </div>
-                      )}
+                        </>)}
+                      </div>
                     </td>
                   </tr>
                 ))}

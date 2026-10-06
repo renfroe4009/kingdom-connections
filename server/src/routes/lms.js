@@ -97,6 +97,141 @@ router.post('/courses/:id/status', requirePermission('lms.write'), async (req, r
   } catch (err) { handleLmsError(err, res, next); }
 });
 
+// Full content tree for one course — modules, lessons, publish state. Staff
+// are exempt from entitlement by the module's own design (see
+// vendor/kcc-lms/src/services/enrolment.ts), so getCourse() returns
+// unpublished lessons too when called with an admin/instructor viewer.
+router.get('/courses/:id', requirePermission('lms.read'), async (req, res, next) => {
+  try {
+    const { store, lms } = await loadRuntime();
+    const course = await store.findCourseById(req.params.id);
+    if (!course) return res.status(404).json({ error: 'No such course.' });
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const detail = await lms.getCourse(context, course.slug);
+    res.json(detail);
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+/* ------------------------------------------------------------- modules */
+
+const moduleSchema = z.object({ courseId: z.string().min(1), title: z.string().min(2), summary: z.string().optional().nullable() });
+router.post('/modules', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const input = moduleSchema.parse(req.body);
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    const created = await lms.createModule(context, input);
+    res.status(201).json(created);
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+const moduleUpdateSchema = z.object({ title: z.string().min(2).optional(), summary: z.string().optional().nullable(), position: z.number().int().optional() });
+router.put('/modules/:id', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const input = moduleUpdateSchema.parse(req.body);
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    await lms.updateModule(context, req.params.id, input);
+    res.json({ ok: true });
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+router.delete('/modules/:id', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    await lms.deleteModule(context, req.params.id);
+    res.json({ ok: true });
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+/* -------------------------------------------------------------- lessons */
+
+const lessonSchema = z.object({
+  moduleId: z.string().min(1),
+  title: z.string().min(2),
+  summary: z.string().optional().nullable(),
+  kind: z.enum(['video', 'reading', 'assignment']).optional(),
+  body: z.string().optional().nullable(),
+  bodyFormat: z.enum(['html', 'markdown']).optional(),
+  keyPoints: z.array(z.string()).optional(),
+  reflectionQuestions: z.array(z.string()).optional(),
+  estimatedMinutes: z.number().int().positive().optional().nullable(),
+  videoRef: z.string().optional().nullable(),
+});
+router.post('/lessons', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const input = lessonSchema.parse(req.body);
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    const created = await lms.createLesson(context, input);
+    res.status(201).json(created);
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+const lessonUpdateSchema = lessonSchema.omit({ moduleId: true }).partial().extend({ isPublished: z.boolean().optional() });
+router.put('/lessons/:id', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const input = lessonUpdateSchema.parse(req.body);
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    await lms.updateLesson(context, req.params.id, input);
+    res.json({ ok: true });
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+router.delete('/lessons/:id', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    await lms.deleteLesson(context, req.params.id);
+    res.json({ ok: true });
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+/* ---------------------------------------------------------------- quiz */
+
+// The full answer key — staff only, enforced again inside getQuizForEditing
+// itself (requireRole('instructor')), not just by this route's permission.
+router.get('/lessons/:id/quiz', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    const quiz = await lms.getQuizForEditing(context, req.params.id);
+    res.json(quiz);
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+const quizSchema = z.object({
+  title: z.string().min(2),
+  instructions: z.string().optional().nullable(),
+  passingScore: z.number().int().min(1).max(100).optional(),
+  maxAttempts: z.number().int().min(0).optional(),
+  questions: z.array(z.object({
+    prompt: z.string().min(2),
+    explanation: z.string().optional().nullable(),
+    options: z.array(z.object({ label: z.string().min(1), isCorrect: z.boolean() })).min(2),
+  })).min(1),
+});
+router.put('/lessons/:id/quiz', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const input = quizSchema.parse(req.body);
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    const result = await lms.upsertQuiz(context, { ...input, lessonId: req.params.id });
+    res.json(result);
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+router.delete('/quizzes/:id', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    await lms.deleteQuiz(context, req.params.id);
+    res.json({ ok: true });
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
 /* ------------------------------------------------------------- cohorts */
 
 router.get('/cohorts', requirePermission('lms.read'), async (req, res, next) => {

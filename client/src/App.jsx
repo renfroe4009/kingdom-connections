@@ -40,6 +40,7 @@ import TextToGiveSettingsPage from './admin/pages/TextToGiveSettingsPage.jsx';
 import MembersList from './admin/pages/MembersList.jsx';
 import MembershipTiersList from './admin/pages/MembershipTiersList.jsx';
 import LmsCoursesPage from './admin/pages/LmsCoursesPage.jsx';
+import LmsCourseEditorPage from './admin/pages/LmsCourseEditorPage.jsx';
 import LmsCohortsPage from './admin/pages/LmsCohortsPage.jsx';
 import EventsList from './admin/pages/EventsList.jsx';
 import EventDetail from './admin/pages/EventDetail.jsx';
@@ -250,6 +251,7 @@ export default function App() {
         <Route path="volunteers/:contactId"     element={<PermissionRoute perm="volunteers.read"><VolunteerDetail /></PermissionRoute>} />
 
         <Route path="lms/courses"               element={<PermissionRoute perm="lms.read"><LmsCoursesPage /></PermissionRoute>} />
+        <Route path="lms/courses/:id"           element={<PermissionRoute perm="lms.read"><LmsCourseEditorPage /></PermissionRoute>} />
         <Route path="lms/cohorts"               element={<PermissionRoute perm="lms.read"><LmsCohortsPage /></PermissionRoute>} />
 
         <Route path="recurring-invoices"        element={<PermissionRoute perm="invoices.read"><RecurringInvoicesList /></PermissionRoute>} />
