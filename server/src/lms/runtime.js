@@ -18,6 +18,32 @@
 // is ESM and this file is CommonJS, so `require()` cannot load it directly.
 // =============================================================================
 const mysql = require('mysql2/promise');
+const storage = require('../services/storage');
+
+// Ports — see server/vendor/kcc-lms/src/ports.ts. Both are thin adapters
+// over the app's existing storage abstraction (same R2-in-production,
+// local-disk-in-dev service the Media Library already uses), not a new
+// video platform: a lesson's "video" is just a stored file played back with
+// a plain <video> tag from a signed URL, not adaptive-bitrate streaming.
+const storagePort = {
+  async signedUrl(objectKey, expiresInSeconds) {
+    const result = await storage.getReadable({ driver: storage.driver, key: objectKey, expiresIn: expiresInSeconds });
+    if (result.type === 'redirect') return result.url;
+    // Local driver has no URL of its own — see routes/lms.js's GET /files/*,
+    // a dev-only fallback that never runs in production (S3/R2 is always
+    // configured there).
+    return `/api/lms/files/${objectKey}`;
+  },
+  async remove(objectKey) {
+    await storage.remove({ driver: storage.driver, key: objectKey });
+  },
+};
+
+const videoPort = {
+  async playback(videoRef) {
+    return { url: await storagePort.signedUrl(videoRef, 3600) };
+  },
+};
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
@@ -62,7 +88,7 @@ async function loadRuntime() {
  */
 async function contextFor(viewerId, role) {
   const { lms, store } = await loadRuntime();
-  return lms.lmsContext({ store, viewer: lms.asViewer(viewerId, role) });
+  return lms.lmsContext({ store, viewer: lms.asViewer(viewerId, role), ports: { storage: storagePort, video: videoPort } });
 }
 
 /** Maps the module's typed errors onto HTTP status codes. */

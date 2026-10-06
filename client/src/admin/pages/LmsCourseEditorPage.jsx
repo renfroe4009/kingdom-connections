@@ -26,7 +26,7 @@ function blankModule() { return { id: null, title: '', summary: '' }; }
 function blankLesson(moduleId) {
   return {
     id: null, moduleId, title: '', summary: '', kind: 'reading', body: '', bodyFormat: 'markdown',
-    keyPoints: '', reflectionQuestions: '', estimatedMinutes: '', videoRef: '', isPublished: false,
+    keyPoints: '', reflectionQuestions: '', estimatedMinutes: '', isPublished: false,
   };
 }
 function blankQuiz(lessonId) {
@@ -55,6 +55,8 @@ export default function LmsCourseEditorPage() {
   const [quizForm, setQuizForm] = useState(null);
   const [quizError, setQuizError] = useState('');
   const [quizLoading, setQuizLoading] = useState(false);
+
+  const [mediaLesson, setMediaLesson] = useState(null);
 
   const canWrite = can('lms.write');
 
@@ -109,7 +111,7 @@ export default function LmsCourseEditorPage() {
       id: l.id, moduleId: null, title: l.title, summary: l.summary || '', kind: l.kind,
       body: l.body || '', bodyFormat: l.bodyFormat || 'markdown',
       keyPoints: listToLines(l.keyPoints), reflectionQuestions: listToLines(l.reflectionQuestions),
-      estimatedMinutes: l.estimatedMinutes ?? '', videoRef: l.videoRef || '', isPublished: !!l.isPublished,
+      estimatedMinutes: l.estimatedMinutes ?? '', isPublished: !!l.isPublished,
     });
     setLessonError('');
     setLessonShow(true);
@@ -126,7 +128,6 @@ export default function LmsCourseEditorPage() {
       keyPoints: linesToList(lessonForm.keyPoints),
       reflectionQuestions: linesToList(lessonForm.reflectionQuestions),
       estimatedMinutes: lessonForm.estimatedMinutes ? Number(lessonForm.estimatedMinutes) : null,
-      videoRef: lessonForm.videoRef.trim() || null,
     };
     try {
       if (lessonForm.id) {
@@ -306,6 +307,9 @@ export default function LmsCourseEditorPage() {
                 </div>
                 {canWrite && (
                   <div className="d-flex gap-1 flex-shrink-0">
+                    <button className="btn btn-sm btn-light" onClick={() => setMediaLesson(l)} title="Video & Attachments">
+                      <iconify-icon icon="solar:videocamera-add-line-duotone"></iconify-icon>
+                    </button>
                     <button className="btn btn-sm btn-light" onClick={() => openQuiz(l)} title="Quiz">
                       <iconify-icon icon="solar:clipboard-check-line-duotone"></iconify-icon>
                     </button>
@@ -383,10 +387,9 @@ export default function LmsCourseEditorPage() {
               <label className="form-label">Estimated Minutes</label>
               <input type="number" min="1" className="form-control" value={lessonForm.estimatedMinutes} onChange={(e) => setLessonForm({ ...lessonForm, estimatedMinutes: e.target.value })} />
             </div>
-            {lessonForm.kind === 'video' && (
-              <div className="col-md-4">
-                <label className="form-label">Video Reference</label>
-                <input className="form-control" value={lessonForm.videoRef} onChange={(e) => setLessonForm({ ...lessonForm, videoRef: e.target.value })} placeholder="Provider video id" />
+            {lessonForm.kind === 'video' && lessonForm.id && (
+              <div className="col-md-4 d-flex align-items-end">
+                <div className="form-text mb-0">Upload the video file from the <strong>Media</strong> button on the lesson row, after saving.</div>
               </div>
             )}
             <div className="col-md-4">
@@ -494,6 +497,156 @@ export default function LmsCourseEditorPage() {
           )}
         </Modal>
       )}
+
+      {mediaLesson && (
+        <LessonMediaModal lesson={mediaLesson} onClose={() => setMediaLesson(null)} onChanged={load} />
+      )}
     </div>
+  );
+}
+
+function blankAttachmentForm() { return { file: null, label: '' }; }
+
+// Video upload + attachments for one lesson — its own modal rather than
+// folded into the edit-lesson form, since a file upload is a different kind
+// of operation (multipart, progress, immediate effect) than editing text
+// fields that only take effect on Save.
+function LessonMediaModal({ lesson, onClose, onChanged }) {
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const [lessonDetail, setLessonDetail] = useState(null);
+  const [attachments, setAttachments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoBusy, setVideoBusy] = useState(false);
+  const [videoError, setVideoError] = useState('');
+  const [attachForm, setAttachForm] = useState(blankAttachmentForm());
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [attachError, setAttachError] = useState('');
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [{ data: detail }, { data: atts }] = await Promise.all([
+        api.get(`/lms/lessons/${lesson.id}`),
+        api.get(`/lms/lessons/${lesson.id}/attachments`),
+      ]);
+      setLessonDetail(detail);
+      setAttachments(atts);
+    } catch (e) {
+      toast(parseApiError(e), 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, [lesson.id]);
+
+  async function uploadVideo() {
+    if (!videoFile) return;
+    setVideoBusy(true);
+    setVideoError('');
+    try {
+      const form = new FormData();
+      form.append('file', videoFile);
+      await api.post(`/lms/lessons/${lesson.id}/video`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setVideoFile(null);
+      await load();
+      onChanged();
+    } catch (e) {
+      setVideoError(parseApiError(e));
+    } finally {
+      setVideoBusy(false);
+    }
+  }
+
+  async function removeVideo() {
+    if (!(await confirm('Remove this lesson\'s video?', { danger: true }))) return;
+    setVideoBusy(true);
+    try {
+      await api.delete(`/lms/lessons/${lesson.id}/video`);
+      await load();
+      onChanged();
+    } catch (e) {
+      toast(parseApiError(e), 'error');
+    } finally {
+      setVideoBusy(false);
+    }
+  }
+
+  async function uploadAttachment() {
+    if (!attachForm.file) return;
+    setAttachBusy(true);
+    setAttachError('');
+    try {
+      const form = new FormData();
+      form.append('file', attachForm.file);
+      if (attachForm.label.trim()) form.append('label', attachForm.label.trim());
+      await api.post(`/lms/lessons/${lesson.id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setAttachForm(blankAttachmentForm());
+      await load();
+      onChanged();
+    } catch (e) {
+      setAttachError(parseApiError(e));
+    } finally {
+      setAttachBusy(false);
+    }
+  }
+
+  async function removeAttachment(att) {
+    if (!(await confirm(`Remove "${att.label}"?`, { danger: true }))) return;
+    try {
+      await api.delete(`/lms/attachments/${att.id}`);
+      load();
+    } catch (e) {
+      toast(parseApiError(e), 'error');
+    }
+  }
+
+  return (
+    <Modal show onClose={onClose} title={`Media — ${lesson.title}`} size="lg" footer={<button className="btn btn-light" onClick={onClose}>Close</button>}>
+      {confirmDialog}
+      {loading ? <div className="text-muted small">Loading…</div> : (
+        <div>
+          <h6 className="fw-bold mb-2">Video</h6>
+          <FormErrorBanner error={videoError} />
+          {lessonDetail?.videoRef ? (
+            <div className="mb-3">
+              <div className="d-flex align-items-center gap-2 mb-2">
+                <span className={`badge ${lessonDetail.videoStatus === 'ready' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
+                  {lessonDetail.videoStatus}
+                </span>
+                <button className="btn btn-sm btn-outline-danger" onClick={removeVideo} disabled={videoBusy}>Remove video</button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-muted small mb-2">No video uploaded yet.</div>
+          )}
+          <div className="d-flex gap-2 mb-4">
+            <input type="file" accept="video/mp4,video/webm" className="form-control" onChange={(e) => setVideoFile(e.target.files?.[0] || null)} />
+            <button className="btn btn-primary flex-shrink-0" disabled={!videoFile || videoBusy} onClick={uploadVideo}>
+              {lessonDetail?.videoRef ? 'Replace' : 'Upload'}
+            </button>
+          </div>
+
+          <h6 className="fw-bold mb-2">Attachments</h6>
+          <FormErrorBanner error={attachError} />
+          <ul className="list-group mb-3">
+            {attachments.map((a) => (
+              <li key={a.id} className="list-group-item d-flex align-items-center justify-content-between">
+                <span className="small">{a.label} <span className="text-muted">({Math.round(a.sizeBytes / 1024)} KB)</span></span>
+                <button className="btn btn-sm btn-light text-danger" onClick={() => removeAttachment(a)}>
+                  <iconify-icon icon="solar:trash-bin-trash-line-duotone"></iconify-icon>
+                </button>
+              </li>
+            ))}
+            {attachments.length === 0 && <li className="list-group-item small text-muted">No attachments yet.</li>}
+          </ul>
+          <div className="d-flex flex-column flex-sm-row gap-2">
+            <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="form-control" onChange={(e) => setAttachForm({ ...attachForm, file: e.target.files?.[0] || null })} />
+            <input className="form-control" placeholder="Label (optional)" value={attachForm.label} onChange={(e) => setAttachForm({ ...attachForm, label: e.target.value })} style={{ maxWidth: 200 }} />
+            <button className="btn btn-primary flex-shrink-0" disabled={!attachForm.file || attachBusy} onClick={uploadAttachment}>Add</button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }

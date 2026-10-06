@@ -169,6 +169,15 @@ export default function PortalLessonView() {
       <div className="small text-muted mb-1">{lesson.moduleTitle}</div>
       <h3 className="fw-bolder mb-3">{lesson.title}</h3>
 
+      {lesson.video?.url && (
+        <video controls preload="metadata" poster={lesson.video.poster} className="w-100 rounded mb-3" style={{ maxHeight: 480, background: '#000' }}>
+          <source src={lesson.video.url} />
+        </video>
+      )}
+      {lesson.kind === 'video' && lesson.videoStatus === 'processing' && !lesson.video?.url && (
+        <div className="alert alert-secondary mb-3">Video is still processing — check back shortly.</div>
+      )}
+
       {lesson.body && (
         <div
           className="mb-3"

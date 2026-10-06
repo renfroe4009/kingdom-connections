@@ -22,10 +22,13 @@
 const router = require('express').Router();
 const { z } = require('zod');
 const { eq } = require('drizzle-orm');
+const multer = require('multer');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { logActivity } = require('../services/activity');
 const { loadRuntime, contextFor, statusForLmsError } = require('../lms/runtime');
+const storage = require('../services/storage');
+const { validateUploadedFile } = require('../services/uploadValidation');
 
 router.use(requireAuth);
 
@@ -34,10 +37,47 @@ function viewerIdFor(user) {
 }
 
 function handleLmsError(err, res, next) {
+  if (err.status) return res.status(err.status).json({ error: err.message });
   const status = statusForLmsError(err);
   if (status) return res.status(status).json({ error: err.message });
   next(err);
 }
+
+// Same allowlist reasoning as routes/media.js: fileFilter only ever sees the
+// client-DECLARED type, so uploadVideo/uploadAttachment below re-validate
+// against the real bytes via validateUploadedFile() before anything is
+// stored. Video gets its own, much larger limit — a teaching video easily
+// runs past the Media Library's 50MB image/PDF cap.
+const VIDEO_MIME_TYPES = ['video/mp4', 'video/webm'];
+const ATTACHMENT_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+
+const uploadVideo = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1024 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, VIDEO_MIME_TYPES.includes(file.mimetype)),
+});
+const uploadAttachment = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, ATTACHMENT_MIME_TYPES.includes(file.mimetype)),
+});
+
+// Dev-only fallback for the local storage driver — see runtime.js's
+// storagePort. Production always has STORAGE_DRIVER=s3 (R2), where
+// signedUrl() returns a real presigned URL and this route never runs.
+// Gated on requireAuth only (any logged-in staff or portal session): by the
+// time a key reaches a client at all, the LMS module has already checked
+// entitlement to generate it, and local-driver keys are unguessable random
+// hex, so this isn't a second entitlement check — it's a dev convenience.
+router.get('/files/*', async (req, res, next) => {
+  try {
+    const key = req.params[0];
+    const result = await storage.getReadable({ driver: storage.driver, key });
+    if (result.type === 'redirect') return res.redirect(result.url);
+    result.stream.on('error', () => res.status(404).end());
+    result.stream.pipe(res);
+  } catch (err) { next(err); }
+});
 
 /* ------------------------------------------------------------- courses */
 
@@ -185,6 +225,107 @@ router.delete('/lessons/:id', requirePermission('lms.write'), async (req, res, n
     const context = await contextFor(viewerIdFor(req.user), 'admin');
     const { lms } = await loadRuntime();
     await lms.deleteLesson(context, req.params.id);
+    res.json({ ok: true });
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+// The course outline (GET /courses/:id) deliberately mirrors what a learner
+// sees plus publish state — it doesn't carry video/attachment state, which
+// only the lesson's own media-management UI needs. Roster question again,
+// not an entitlement one — same reasoning as the cohort member/course
+// listings above.
+router.get('/lessons/:id', requirePermission('lms.read'), async (req, res, next) => {
+  try {
+    const { store } = await loadRuntime();
+    const found = await store.findLessonById(req.params.id);
+    if (!found) return res.status(404).json({ error: 'No such lesson.' });
+    res.json(found.lesson);
+  } catch (err) { next(err); }
+});
+
+/* ------------------------------------------------------------- video */
+
+router.post('/lessons/:id/video', requirePermission('lms.write'), uploadVideo.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded, or its type is not allowed.' });
+    const validation = await validateUploadedFile(req.file, VIDEO_MIME_TYPES);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { store, lms } = await loadRuntime();
+    const existing = await store.findLessonById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'No such lesson.' });
+
+    const { key } = await storage.put({
+      entity_type: 'lms_lesson_video', entity_id: req.params.id,
+      originalName: req.file.originalname, contentType: validation.detectedMime, buffer: req.file.buffer,
+    });
+
+    if (existing.lesson.videoRef) {
+      await storage.remove({ driver: storage.driver, key: existing.lesson.videoRef }).catch(() => {});
+    }
+    await lms.updateLesson(context, req.params.id, { videoRef: key });
+    // updateLesson always sets a fresh videoRef to 'processing' — the status
+    // an async transcoding provider (Cloudflare Stream, Mux) would start at,
+    // then flip via its own webhook (recordVideoState). Direct file storage
+    // has no transcoding step, so it's ready the moment the upload lands.
+    await lms.recordVideoState(context, { videoRef: key, status: 'ready' });
+    await logActivity({ userId: req.user.id, entityType: 'lms_lesson', entityId: req.params.id, action: 'updated', description: 'Uploaded lesson video' });
+    res.json({ ok: true });
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+router.delete('/lessons/:id/video', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { store, lms } = await loadRuntime();
+    const existing = await store.findLessonById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'No such lesson.' });
+    if (existing.lesson.videoRef) {
+      await storage.remove({ driver: storage.driver, key: existing.lesson.videoRef }).catch(() => {});
+    }
+    await lms.updateLesson(context, req.params.id, { videoRef: null });
+    res.json({ ok: true });
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+/* ------------------------------------------------------------- attachments */
+
+router.get('/lessons/:id/attachments', requirePermission('lms.read'), async (req, res, next) => {
+  try {
+    const { store } = await loadRuntime();
+    const rows = await store.attachmentsFor(req.params.id);
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.post('/lessons/:id/attachments', requirePermission('lms.write'), uploadAttachment.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded, or its type is not allowed.' });
+    const validation = await validateUploadedFile(req.file, ATTACHMENT_MIME_TYPES);
+    if (!validation.ok) return res.status(400).json({ error: validation.error });
+
+    const label = (req.body.label || req.file.originalname || 'Attachment').slice(0, 120);
+    const { key } = await storage.put({
+      entity_type: 'lms_lesson_attachment', entity_id: req.params.id,
+      originalName: req.file.originalname, contentType: validation.detectedMime, buffer: req.file.buffer,
+    });
+
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    const created = await lms.addAttachment(context, {
+      lessonId: req.params.id, label, objectKey: key,
+      contentType: validation.detectedMime, sizeBytes: req.file.buffer.length,
+    });
+    res.status(201).json(created);
+  } catch (err) { handleLmsError(err, res, next); }
+});
+
+router.delete('/attachments/:id', requirePermission('lms.write'), async (req, res, next) => {
+  try {
+    const context = await contextFor(viewerIdFor(req.user), 'admin');
+    const { lms } = await loadRuntime();
+    await lms.removeAttachment(context, req.params.id);
     res.json({ ok: true });
   } catch (err) { handleLmsError(err, res, next); }
 });
