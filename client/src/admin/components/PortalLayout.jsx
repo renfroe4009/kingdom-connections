@@ -15,6 +15,7 @@ const navItems = [
   { to: '/portal/dashboard',        label: 'Dashboard',        icon: 'solar:screencast-2-line-duotone' },
   { to: '/portal/giving',           label: 'My Giving',        icon: 'solar:hand-heart-line-duotone' },
   { to: '/portal/membership',       label: 'My Membership',    icon: 'solar:medal-ribbons-star-line-duotone' },
+  { to: '/portal/learning',         label: 'Learning',         icon: 'solar:square-academic-cap-2-line-duotone' },
   { to: '/portal/events',           label: 'My Events',        icon: 'solar:calendar-line-duotone' },
   { to: '/portal/orders',           label: 'My Orders',        icon: 'solar:bag-check-line-duotone' },
   { to: '/portal/invoices',         label: 'Invoices',         icon: 'solar:bill-list-line-duotone' },

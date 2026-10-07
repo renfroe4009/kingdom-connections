@@ -39,6 +39,9 @@ import FundsList from './admin/pages/FundsList.jsx';
 import TextToGiveSettingsPage from './admin/pages/TextToGiveSettingsPage.jsx';
 import MembersList from './admin/pages/MembersList.jsx';
 import MembershipTiersList from './admin/pages/MembershipTiersList.jsx';
+import LmsCoursesPage from './admin/pages/LmsCoursesPage.jsx';
+import LmsCourseEditorPage from './admin/pages/LmsCourseEditorPage.jsx';
+import LmsCohortsPage from './admin/pages/LmsCohortsPage.jsx';
 import EventsList from './admin/pages/EventsList.jsx';
 import EventDetail from './admin/pages/EventDetail.jsx';
 import EventCheckIn from './admin/pages/EventCheckIn.jsx';
@@ -78,6 +81,9 @@ import PortalRegister from './admin/pages/portal/PortalRegister.jsx';
 import PortalVerifyEmail from './admin/pages/portal/PortalVerifyEmail.jsx';
 import PortalGiving from './admin/pages/portal/PortalGiving.jsx';
 import PortalMembership from './admin/pages/portal/PortalMembership.jsx';
+import PortalLearning from './admin/pages/portal/PortalLearning.jsx';
+import PortalCourseView from './admin/pages/portal/PortalCourseView.jsx';
+import PortalLessonView from './admin/pages/portal/PortalLessonView.jsx';
 import PortalEvents from './admin/pages/portal/PortalEvents.jsx';
 import PortalOrders from './admin/pages/portal/PortalOrders.jsx';
 import WebsitePagesPage from './vb/admin/WebsitePagesPage.jsx';
@@ -193,6 +199,9 @@ export default function App() {
         <Route path="dashboard"          element={<PortalDashboard />} />
         <Route path="giving"             element={<PortalGiving />} />
         <Route path="membership"         element={<PortalMembership />} />
+        <Route path="learning"                     element={<PortalLearning />} />
+        <Route path="learning/:courseSlug"          element={<PortalCourseView />} />
+        <Route path="learning/:courseSlug/:lessonSlug" element={<PortalLessonView />} />
         <Route path="events"             element={<PortalEvents />} />
         <Route path="orders"             element={<PortalOrders />} />
         <Route path="invoices"           element={<PortalInvoices />} />
@@ -246,6 +255,10 @@ export default function App() {
         <Route path="events/:id/checkin"        element={<PermissionRoute perm="events.checkin"><EventCheckIn /></PermissionRoute>} />
         <Route path="volunteers"                element={<PermissionRoute perm="volunteers.read"><VolunteersList /></PermissionRoute>} />
         <Route path="volunteers/:contactId"     element={<PermissionRoute perm="volunteers.read"><VolunteerDetail /></PermissionRoute>} />
+
+        <Route path="lms/courses"               element={<PermissionRoute perm="lms.read"><LmsCoursesPage /></PermissionRoute>} />
+        <Route path="lms/courses/:id"           element={<PermissionRoute perm="lms.read"><LmsCourseEditorPage /></PermissionRoute>} />
+        <Route path="lms/cohorts"               element={<PermissionRoute perm="lms.read"><LmsCohortsPage /></PermissionRoute>} />
 
         <Route path="recurring-invoices"        element={<PermissionRoute perm="invoices.read"><RecurringInvoicesList /></PermissionRoute>} />
         <Route path="recurring-invoices/:id"    element={<PermissionRoute perm="invoices.read"><RecurringInvoiceDetail /></PermissionRoute>} />

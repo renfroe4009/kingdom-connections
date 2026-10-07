@@ -1,5 +1,10 @@
 node_modules/
 dist/
+# The LMS module ships TypeScript with no build step of its own; its
+# compiled output is committed because this server has no build phase at
+# deploy time either. See server/vendor/kcc-lms/VENDORED.md.
+!server/vendor/kcc-lms/dist/
+!server/vendor/kcc-lms/dist/**
 .env
 .env.*
 !.env.example

@@ -112,6 +112,14 @@ const SECTIONS = [
     ],
   },
   {
+    key: 'lms', label: 'Learning', icon: 'solar:square-academic-cap-2-bold-duotone',
+    matchPrefixes: ['/admin/lms'],
+    items: [
+      { to: '/admin/lms/courses', label: 'Courses', icon: 'solar:book-2-line-duotone', perm: 'lms.read' },
+      { to: '/admin/lms/cohorts', label: 'Cohorts',  icon: 'solar:users-group-rounded-line-duotone', perm: 'lms.read' },
+    ],
+  },
+  {
     key: 'reports', label: 'Reports', icon: 'solar:chart-line-duotone',
     matchPrefixes: ['/admin/reports'],
     items: [
