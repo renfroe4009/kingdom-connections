@@ -118,6 +118,14 @@ router.post('/public/signup', async (req, res, next) => {
     const cfg = await getGateway('valor', null);
     if (!cfg) return res.status(400).json({ error: 'No active Valor gateway configured' });
 
+    // Passage.js's cardholder-name field isn't always populated (donor left it
+    // blank, or Passage didn't render it) — Valor's vault/charge endpoints
+    // reject a missing/blank name outright (error E08: "INVALID CARD HOLDER
+    // NAME"), so always fall back to the donor's name from the signup form
+    // rather than send undefined. (Mirrors donations.js's /public/recurring.)
+    const donorFullName = `${donor.first_name || ''} ${donor.last_name || ''}`.trim();
+    const cardholderName = body.cardholder_name || donorFullName || undefined;
+
     // ---- Vault the card (identical sequence to donations.js /public/recurring) ----
     const [[existing]] = await db.query(
       `SELECT valor_vault_id FROM vault_profiles
@@ -127,13 +135,13 @@ router.post('/public/signup', async (req, res, next) => {
     let vaultId = existing?.valor_vault_id || null;
     if (!vaultId) {
       vaultId = await valorVaultAddCustomer(cfg, {
-        customer_name: `${donor.first_name || ''} ${donor.last_name || ''}`.trim() || 'Member',
+        customer_name: donorFullName || 'Member',
         customer_email: donor.email,
         customer_phone: donor.phone || undefined,
       });
     }
     const paymentProfileId = await valorVaultAddPaymentProfile(cfg, {
-      vault_id: vaultId, card_token: body.card_token, cardholder_name: body.cardholder_name || undefined,
+      vault_id: vaultId, card_token: body.card_token, cardholder_name: cardholderName,
     });
 
     const [vp] = await db.query(
@@ -146,7 +154,7 @@ router.post('/public/signup', async (req, res, next) => {
       {
         contact_id: contactId, valor_vault_id: vaultId, valor_payment_profile_id: paymentProfileId,
         card_token: body.card_token, last4: body.last4 || null, card_brand: body.card_brand || null,
-        cardholder_name: body.cardholder_name || null, expiry: body.expiry || null,
+        cardholder_name: cardholderName || null, expiry: body.expiry || null,
       }
     );
     const vaultProfileId = vp.insertId;
@@ -187,7 +195,7 @@ router.post('/public/signup', async (req, res, next) => {
     try {
       chargeJson = await valorVaultCharge(cfg, {
         card_token: body.card_token, amount, invoicenumber: number,
-        cardholdername: body.cardholder_name || undefined, email: donor.email,
+        cardholdername: cardholderName, email: donor.email,
       });
     } catch (chargeErr) {
       return res.status(402).json({ error: chargeErr.message || 'Card could not be charged' });
