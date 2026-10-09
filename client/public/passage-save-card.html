@@ -118,12 +118,18 @@
             // sensitive PCI data and they never leave the browser as full PAN.
             var numEl  = document.getElementById('cc-number');
             var expEl  = document.getElementById('cc-expiry');
-            var nameEl = document.getElementById('cc-name');
+            // There's no #cc-name field on this page — Passage.js mounts its
+            // own hosted fields into #valor-fields and never renders a name
+            // input of its own. This lookup always returned '', which sent
+            // Valor a blank cardholdername and got rejected (error E08). The
+            // server now falls back to the account holder's name (see
+            // resolveCardholderName in services/gateways.js), so leave this
+            // blank rather than imply a value we can't produce.
+            var holder = '';
 
             var rawNum = numEl  ? numEl.value.replace(/\D/g, '')  : '';
             var last4  = rawNum.length >= 4 ? rawNum.slice(-4) : '';
             var expiry = expEl  ? expEl.value.trim()              : '';
-            var holder = nameEl ? nameEl.value.trim()             : '';
 
             // Detect brand from BIN prefix.
             function detectBrand(n) {

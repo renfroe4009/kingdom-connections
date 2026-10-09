@@ -1060,6 +1060,7 @@ router.post('/invoices/:id/pay-saved', async (req, res, next) => {
       authnetVaultCharge,
       mapAuthnetVaultChargeResponse,
       computeProcessingFee,
+      resolveCardholderName,
     } = require('../services/gateways');
 
     let paymentId, txnId, chargeStatus;
@@ -1090,7 +1091,7 @@ router.post('/invoices/:id/pay-saved', async (req, res, next) => {
         card_token:      profile.card_token,
         amount,
         invoicenumber:   inv.invoice_number,
-        cardholdername:  profile.cardholder_name || undefined,
+        cardholdername:  resolveCardholderName(profile.cardholder_name),
         email:           inv.contact_email       || undefined,
         surcharge_amount: fee?.amount || 0,
       });

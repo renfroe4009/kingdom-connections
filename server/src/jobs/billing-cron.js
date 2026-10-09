@@ -358,6 +358,7 @@ async function attemptAutoCharge({ source, entityType, invoiceId, amount }) {
     mapValorVaultChargeResponse,
     authnetVaultCharge,
     mapAuthnetVaultChargeResponse,
+    resolveCardholderName,
   } = require('../services/gateways');
 
   const label = `${entityType} #${source.id}`;
@@ -429,7 +430,7 @@ async function attemptAutoCharge({ source, entityType, invoiceId, amount }) {
           card_token:      profile.card_token,
           amount:          chargeAmount,
           invoicenumber:   inv?.invoice_number || `INV-${invoiceId}`,
-          cardholdername:  profile.cardholder_name || undefined,
+          cardholdername:  resolveCardholderName(profile.cardholder_name),
           email:           inv?.contact_email      || undefined,
           surcharge_amount: fee?.amount || 0,
         });
