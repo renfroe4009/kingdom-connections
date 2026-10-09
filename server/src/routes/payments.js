@@ -14,7 +14,7 @@ const {
   valorSearchByInvoice, mapValorTransactionResponse,
   valorVaultCharge, mapValorVaultChargeResponse,
   valorVaultAddCustomer, valorVaultAddACHProfile, valorVaultAchCharge,
-  computeProcessingFee,
+  computeProcessingFee, resolveCardholderName,
 } = require('../services/gateways');
 const {
   reconcileAllActiveGateways, listRecentRuns,
@@ -475,6 +475,12 @@ router.post('/public/charge/:invoiceId', publicPaymentLimiter, express.json(), a
     const cfg = await getGateway('valor', null);
     if (!cfg) return res.status(400).json({ error: 'No active Valor gateway configured' });
 
+    // Passage.js's cardholder-name field isn't always populated (donor left it
+    // blank, or Passage didn't render it) — Valor rejects a blank name with
+    // E08 "INVALID CARD HOLDER NAME". Fall back to the invoice's contact name
+    // rather than send undefined (same fallback donations.js/membership.js use).
+    const cardholderName = resolveCardholderName(cardholder_name, `${inv.first_name || ''} ${inv.last_name || ''}`);
+
     // If a fee was already decided and baked into balance_due at checkout
     // time (e.g. a donor's voluntary "cover the fee" add-on — see
     // donations.js's /public/checkout), use that recorded amount as-is and
@@ -521,7 +527,7 @@ router.post('/public/charge/:invoiceId', publicPaymentLimiter, express.json(), a
         last4: last4   || null,
         brand: card_brand || null,
         exp:   expiry  || null,
-        holder: cardholder_name || null,
+        holder: cardholderName || null,
         rtok:  receiptToken,
       }
     );
@@ -534,12 +540,15 @@ router.post('/public/charge/:invoiceId', publicPaymentLimiter, express.json(), a
         card_token,
         amount:           chargeAmount,
         invoicenumber:    inv.invoice_number,
-        cardholdername:   cardholder_name || undefined,
+        cardholdername:   cardholderName,
         email:            inv.contact_email || undefined,
         surcharge_amount: fee?.amount || 0,
       });
     } catch (chargeErr) {
-      await db.query(`UPDATE payments SET status='failed' WHERE id=:id`, { id: paymentId });
+      await db.query(
+        `UPDATE payments SET status='failed', processor_code = :pcode, processor_message = :pmsg WHERE id=:id`,
+        { id: paymentId, pcode: chargeErr.gatewayCode || null, pmsg: chargeErr.rawMessage || chargeErr.message || null }
+      );
       return res.status(402).json({ error: chargeErr.message });
     }
 

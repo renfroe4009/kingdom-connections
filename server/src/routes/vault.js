@@ -439,6 +439,7 @@ const {
   authnetVaultCharge,
   mapAuthnetVaultChargeResponse,
   computeProcessingFee,
+  resolveCardholderName,
 } = require('../services/gateways');
 
 router.post('/charge-invoice', requirePermission('payments.write'), async (req, res, next) => {
@@ -484,7 +485,7 @@ router.post('/charge-invoice', requirePermission('payments.write'), async (req, 
 
       const chargeJson = await valorVaultCharge(cfg, {
         card_token: profile.card_token, amount,
-        invoicenumber: inv.invoice_number, cardholdername: profile.cardholder_name || undefined,
+        invoicenumber: inv.invoice_number, cardholdername: resolveCardholderName(profile.cardholder_name),
         email: inv.contact_email || undefined, surcharge_amount: fee?.amount || 0,
       });
       const mapped = mapValorVaultChargeResponse(chargeJson);

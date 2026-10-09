@@ -359,7 +359,7 @@ router.post('/public/save-card/:invoiceId', async (req, res, next) => {
     );
     if (!payment) return res.status(409).json({ error: 'Payment has not completed yet' });
 
-    const { getGateway, valorVaultAddCustomer, valorVaultAddPaymentProfile } = require('../services/gateways');
+    const { getGateway, valorVaultAddCustomer, valorVaultAddPaymentProfile, resolveCardholderName } = require('../services/gateways');
     const cfg = await getGateway('valor', null);
     if (!cfg) return res.status(400).json({ error: 'No active Valor gateway configured' });
 
@@ -371,7 +371,7 @@ router.post('/public/save-card/:invoiceId', async (req, res, next) => {
     // blank, or Passage didn't render it) — Valor's vault endpoints reject a
     // missing/blank name outright (error E08: "INVALID CARD HOLDER NAME"), so
     // always fall back to the contact's real name rather than send undefined.
-    const cardholderName = body.cardholder_name || ct?.name || undefined;
+    const cardholderName = resolveCardholderName(body.cardholder_name, ct?.name);
 
     const [[existing]] = await db.query(
       `SELECT valor_vault_id FROM vault_profiles
@@ -452,6 +452,7 @@ router.post('/public/recurring', async (req, res, next) => {
     const {
       getGateway, valorVaultAddCustomer, valorVaultAddPaymentProfile,
       valorVaultCharge, mapValorVaultChargeResponse, computeProcessingFee,
+      resolveCardholderName,
     } = require('../services/gateways');
     const { refreshInvoiceTotalsById } = require('../routes/invoices');
     const { addInterval } = require('../jobs/billing-cron');
@@ -491,7 +492,7 @@ router.post('/public/recurring', async (req, res, next) => {
     // NAME"), so always fall back to the donor's name from the donation form
     // rather than send undefined.
     const donorFullName = `${donor.first_name || ''} ${donor.last_name || ''}`.trim();
-    const cardholderName = body.cardholder_name || donorFullName || undefined;
+    const cardholderName = resolveCardholderName(body.cardholder_name, donorFullName);
 
     // ---- Vault the card (mirrors vault.js's POST /save-card exactly) ----
     const [[existing]] = await db.query(

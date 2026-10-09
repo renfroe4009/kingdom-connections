@@ -19,7 +19,7 @@ const router = express.Router();
 const { z } = require('zod');
 const crypto = require('crypto');
 const { db } = require('../db');
-const { getDefaultGateway, valorGetClientToken, valorVaultCharge, valorAchCharge, mapValorVaultChargeResponse } = require('../services/gateways');
+const { getDefaultGateway, valorGetClientToken, valorVaultCharge, valorAchCharge, mapValorVaultChargeResponse, resolveCardholderName } = require('../services/gateways');
 const { sendMail } = require('../services/mailer');
 const moduleSettings = require('../services/moduleSettings');
 const { getBrandColors } = require('../services/brandColors');
@@ -553,7 +553,7 @@ router.post('/complete', async (req, res, next) => {
           card_token: d.card_token,
           amount: ctx.total,
           invoicenumber: ctx.order_number.slice(-12),
-          cardholdername: `${d.first_name} ${d.last_name}`,
+          cardholdername: resolveCardholderName(`${d.first_name} ${d.last_name}`),
           email: d.email,
           surcharge_amount: ctx.fee.amount,
         });
@@ -607,7 +607,7 @@ router.post('/complete-saved', requireAuth, requirePortal, async (req, res, next
           card_token: profile.card_token,
           amount: ctx.total,
           invoicenumber: ctx.order_number.slice(-12),
-          cardholdername: profile.cardholder_name || `${d.first_name} ${d.last_name}`,
+          cardholdername: resolveCardholderName(profile.cardholder_name, `${d.first_name} ${d.last_name}`),
           email: d.email,
           surcharge_amount: ctx.fee.amount,
         });

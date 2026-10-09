@@ -1084,6 +1084,40 @@ async function valorVaultAddACHProfile(cfg, {
   return achProfileId ? String(achProfileId) : null;
 }
 
+// Resolve the cardholder name to send Valor from a list of candidates, in
+// priority order (e.g. a value the caller already has, then a stored vault
+// profile name, then a contact/donor name pulled from the DB). Passage.js's
+// own cardholder-name field isn't always populated — the donor left it
+// blank, or the embedded iframe never rendered it — and Valor's vault/charge
+// endpoints reject a missing/blank name outright (error E08: "INVALID CARD
+// HOLDER NAME"), so every Valor charge call site must resolve to a real name
+// rather than pass undefined. Centralized here so a new call site can't
+// forget it. Returns undefined (never '') so callers can keep using `|| x`.
+function resolveCardholderName(...candidates) {
+  for (const c of candidates) {
+    const trimmed = String(c || '').trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+// Known Valor response/error codes mapped to plain language for the donor —
+// the raw gateway string (e.g. "Valor VaultCharge failed (400): E08") is
+// useless to a non-technical payer and leaks gateway internals. The raw code
+// is preserved separately (thrown error's `.gatewayCode`) for logging and
+// payments.processor_code.
+const VALOR_ERROR_MESSAGES = {
+  E08: 'The name on the card is missing or invalid. Please check the name and try again.',
+  E75: 'The saved card details are invalid. Please re-enter your card.',
+  A04: 'The account name is invalid.',
+};
+
+function describeValorError(code) {
+  const key = String(code || '').trim().toUpperCase();
+  return VALOR_ERROR_MESSAGES[key]
+    || 'Your payment could not be processed. Please check your card details and try again.';
+}
+
 // Step 5 — Charge a card_token via /?pagesale.
 // Used by the recurring invoice billing cron for auto-pay.
 // Returns the raw Valor response; caller is responsible for persisting the
@@ -1132,7 +1166,14 @@ async function valorVaultCharge(cfg, {
   console.log('[valorVaultCharge] invoicenumber=%s status=%s body=', invoicenumber, res.status, json);
 
   if (!res.ok) {
-    throw new Error(`Valor VaultCharge failed (${res.status}): ${json.message || json.error_no || text.slice(0, 200)}`);
+    const rawCode = json.error_no || json.responseCode || null;
+    const rawDetail = json.message || json.error_no || text.slice(0, 200);
+    // eslint-disable-next-line no-console
+    console.error(`[valorVaultCharge] rejected invoicenumber=%s status=%s code=%s detail=%s`, invoicenumber, res.status, rawCode, rawDetail);
+    const err = new Error(describeValorError(rawCode));
+    err.gatewayCode = rawCode;
+    err.rawMessage = `Valor VaultCharge failed (${res.status}): ${rawDetail}`;
+    throw err;
   }
   return json;
 }
@@ -1532,4 +1573,6 @@ module.exports = {
   valorVaultAchCharge,
   valorAchCharge,
   mapValorVaultChargeResponse,
+  resolveCardholderName,
+  describeValorError,
 };

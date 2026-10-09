@@ -97,7 +97,7 @@ router.post('/public/signup', async (req, res, next) => {
   try {
     const {
       getGateway, valorVaultAddCustomer, valorVaultAddPaymentProfile,
-      valorVaultCharge, mapValorVaultChargeResponse,
+      valorVaultCharge, mapValorVaultChargeResponse, resolveCardholderName,
     } = require('../services/gateways');
     const { refreshInvoiceTotalsById } = require('../routes/invoices');
 
@@ -124,7 +124,7 @@ router.post('/public/signup', async (req, res, next) => {
     // NAME"), so always fall back to the donor's name from the signup form
     // rather than send undefined. (Mirrors donations.js's /public/recurring.)
     const donorFullName = `${donor.first_name || ''} ${donor.last_name || ''}`.trim();
-    const cardholderName = body.cardholder_name || donorFullName || undefined;
+    const cardholderName = resolveCardholderName(body.cardholder_name, donorFullName);
 
     // ---- Vault the card (identical sequence to donations.js /public/recurring) ----
     const [[existing]] = await db.query(
