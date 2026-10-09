@@ -254,8 +254,19 @@ export default function InvoiceDetail() {
     }
   }
 
+  async function voidPayment(pid) {
+    if (!(await confirm('Void this payment? This reverses the charge at the gateway (full amount) — no money has moved to the bank yet since it has not settled.', { danger: true }))) return;
+    const reason = await prompt('Reason for void (optional):', { defaultValue: '' });
+    try {
+      await api.post(`/payments/${pid}/void`, { reason: reason || null });
+      load();
+    } catch (err) {
+      toast(parseApiError(err), 'error');
+    }
+  }
+
   async function refundPayment(pid) {
-    if (!(await confirm('Mark this payment as refunded? This updates the invoice balance locally.', { danger: true }))) return;
+    if (!(await confirm('Refund this payment? This credits the cardholder\'s account at the gateway for the full amount.', { danger: true }))) return;
     try {
       await api.post(`/payments/${pid}/refund`);
       load();
@@ -546,7 +557,16 @@ export default function InvoiceDetail() {
                                 </button>
                               </>
                             )}
-                            {can('payments.write') && p.status && !['pending','failed','voided','refunded','cancelled'].includes(String(p.status).toLowerCase()) && (
+                            {/* Void (unsettled, full reversal) vs Refund (settled, credits the
+                                card) — gated on settlement the same way as TransactionsPage and
+                                the backend (/payments/:id/void|refund): the gateway rejects
+                                whichever one doesn't match, so only offer the one that applies. */}
+                            {can('payments.write') && p.status && !['pending','failed','voided','refunded','cancelled'].includes(String(p.status).toLowerCase()) && !p.settled_at && (
+                              <button className="btn btn-sm btn-light text-danger" onClick={() => voidPayment(p.id)}>
+                                Void
+                              </button>
+                            )}
+                            {can('payments.write') && p.status && !['pending','failed','voided','refunded','cancelled'].includes(String(p.status).toLowerCase()) && !!p.settled_at && (
                               <button className="btn btn-sm btn-light text-danger" onClick={() => refundPayment(p.id)}>
                                 Refund
                               </button>

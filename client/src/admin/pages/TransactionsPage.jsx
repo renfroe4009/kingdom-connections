@@ -226,10 +226,18 @@ export default function TransactionsPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const canWrite = can('payments.write');
 
-  // Permitted next actions for a payment row.
-  const canVoid = (p) => ['pending', 'authorized', 'captured'].includes(String(p.status).toLowerCase());
+  // Permitted next actions for a payment row. Gated on settlement, matching
+  // the backend (server/src/routes/payments.js /:id/void and /:id/refund) —
+  // a transaction that hasn't hit a settlement batch yet can only be voided
+  // (no money has moved to the bank), and one that already settled can only
+  // be refunded (void is rejected by both Authorize.Net and Valor past that
+  // point). Showing both buttons regardless of settlement just meant staff
+  // discovered the real rule from a gateway error after the fact.
+  const canVoid = (p) => ['pending', 'authorized', 'captured'].includes(String(p.status).toLowerCase())
+    && !p.settled_at;
   const canRefund = (p) => ['captured', 'authorized'].includes(String(p.status).toLowerCase())
-    && !p.refunded_at;
+    && !p.refunded_at
+    && !!p.settled_at;
 
   return (
     <div>

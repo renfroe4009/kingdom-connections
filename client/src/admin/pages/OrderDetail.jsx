@@ -43,8 +43,19 @@ export default function OrderDetail() {
     } finally { setSaving(false); }
   }
 
+  async function voidPayment(pid) {
+    if (!(await confirm('Void this payment? This reverses the charge at the gateway (full amount) — no money has moved to the bank yet since it has not settled.', { danger: true }))) return;
+    const reason = await prompt('Reason for void (optional):', { defaultValue: '' });
+    try {
+      await api.post(`/payments/${pid}/void`, { reason: reason || null });
+      load();
+    } catch (e) {
+      toast(parseApiError(e), 'error');
+    }
+  }
+
   async function refundPayment(pid) {
-    if (!(await confirm('Mark this payment as refunded? This updates the order balance locally.', { danger: true }))) return;
+    if (!(await confirm('Refund this payment? This credits the cardholder\'s account at the gateway for the full amount.', { danger: true }))) return;
     try {
       await api.post(`/payments/${pid}/refund`);
       load();
@@ -196,7 +207,10 @@ export default function OrderDetail() {
                                 </button>
                               </>
                             )}
-                            {can('payments.write') && p.status && !['pending', 'failed', 'voided', 'refunded', 'cancelled'].includes(String(p.status).toLowerCase()) && (
+                            {can('payments.write') && p.status && !['pending', 'failed', 'voided', 'refunded', 'cancelled'].includes(String(p.status).toLowerCase()) && !p.settled_at && (
+                              <button className="btn btn-sm btn-light text-danger" onClick={() => voidPayment(p.id)}>Void</button>
+                            )}
+                            {can('payments.write') && p.status && !['pending', 'failed', 'voided', 'refunded', 'cancelled'].includes(String(p.status).toLowerCase()) && !!p.settled_at && (
                               <button className="btn btn-sm btn-light text-danger" onClick={() => refundPayment(p.id)}>Refund</button>
                             )}
                           </td>
