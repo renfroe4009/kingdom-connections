@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<!--
+  Passage.js submits its card form to a hidden target iframe even when ACH
+  is disabled (see passage-pay.html / passage-save-card.html). It needs a
+  real, same-origin, inert page to land on — not a 404 (CSP-blocked if
+  cross-origin) and not the SPA's catch-all rewrite, which would load the
+  entire React app inside that tiny hidden frame.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>html, body { margin: 0; padding: 0; background: transparent; }</style>
+</head>
+<body></body>
+</html>

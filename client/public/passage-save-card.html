@@ -99,7 +99,12 @@
             // formAction is required by validateRequiredConfig() — without it
             // the form never renders. Card never hits it (tokenReceived fires
             // instead); ACH's sub-form really does POST here whenever enabled.
-            formAction:    achFormAction ? decodeURIComponent(achFormAction) : (window.location.origin + '/passage-noop'),
+            // When ACH is off, Passage.js still targets this at an internal
+            // hidden iframe — point it at a real static file (passage-noop.html)
+            // rather than a path with no matching file: this app's SPA rewrite
+            // (vercel.json) sends any unmatched path to index.html, so the
+            // whole React app was loading inside that tiny hidden frame.
+            formAction:    achFormAction ? decodeURIComponent(achFormAction) : (window.location.origin + '/passage-noop.html'),
             submitText:    'Save Card',
             // isDemo=true tells Passage.js to use securelink-staging.valorpaytech.com
             isDemo:        (mode === 'sandbox' || mode === 'demo'),

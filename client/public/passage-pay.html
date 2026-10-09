@@ -109,7 +109,13 @@
             // real, uncontrollable browser form submission — see the
             // tokenReceived-vs-formSubmitting comments below), which is why
             // achFormAction must point at a real endpoint whenever ACH is on.
-            formAction:    achFormAction ? decodeURIComponent(achFormAction) : (apiOrigin + '/passage-noop'),
+            // When ACH is off, Passage.js still targets this at an internal
+            // hidden iframe — must be same-origin (passage-noop.html, a real
+            // static file on THIS origin), never the Railway API origin:
+            // that's cross-origin and gets blocked by the API's own
+            // frame-ancestors CSP, and previously showed as a stray blank/
+            // broken frame in the payment UI.
+            formAction:    achFormAction ? decodeURIComponent(achFormAction) : (window.location.origin + '/passage-noop.html'),
             submitText:    'Pay Now',
             // isDemo=true tells Passage.js to use securelink-staging.valorpaytech.com
             // instead of the production securelink.valorpaytech.com endpoint.
