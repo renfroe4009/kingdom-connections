@@ -3,6 +3,16 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../../api/client.js';
 import PageHeader from '../../components/PageHeader.jsx';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
+import { useModuleConfig } from '../context/ModuleConfigContext.jsx';
+
+// Which optional integration (navConfig.js's INTEGRATIONS keys) gates each
+// tab — a disabled integration hides its tab entirely. 'log' (CW Sync Log)
+// rides along with 'cw' since it's only meaningful when ConnectWise is in
+// use. Tabs not listed here (smtp, pay, security) are core and always shown.
+const TAB_INTEGRATION_KEY = {
+  cw: 'connectwise', log: 'connectwise',
+  usps: 'usps', google: 'google', sms: 'sms', ai: 'ai', mobileapi: 'mobileapi',
+};
 
 // Token field — shows masked value when saved, reveals a fresh input only when
 // the user explicitly clicks "Change". Prevents accidental paste-overwrites.
@@ -45,8 +55,21 @@ const GOOGLE_REDIRECT_URI = `${(import.meta.env.VITE_API_URL || 'http://localhos
 
 export default function SettingsPage() {
   const { confirm, dialog: confirmDialog } = useConfirm();
+  const { isIntegrationEnabled, loading: moduleConfigLoading } = useModuleConfig();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState(searchParams.get('tab') || 'smtp');
+
+  function isTabVisible(t) {
+    const key = TAB_INTEGRATION_KEY[t];
+    return !key || isIntegrationEnabled(key);
+  }
+
+  // If the module manager hides the tab the URL/state pointed at, land on the
+  // first still-visible tab instead of a blank pane.
+  useEffect(() => {
+    if (moduleConfigLoading) return;
+    if (!isTabVisible(tab)) setTab('smtp');
+  }, [moduleConfigLoading, tab]);
   const [smtp, setSmtp] = useState({
     host: '', port: 587, secure: false, username: '', password: '',
     from_email: '', from_name: '', is_active: true,
@@ -467,21 +490,21 @@ export default function SettingsPage() {
       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <ul className="nav nav-tabs mb-3" style={{ flexWrap: 'nowrap', minWidth: 'max-content' }}>
         <li className="nav-item"><button className={`nav-link ${tab === 'smtp' ? 'active' : ''}`} onClick={() => setTab('smtp')}>Email / SMTP</button></li>
-        <li className="nav-item"><button className={`nav-link ${tab === 'cw' ? 'active' : ''}`} onClick={() => setTab('cw')}>ConnectWise Manage</button></li>
-        <li className="nav-item"><button className={`nav-link ${tab === 'usps' ? 'active' : ''}`} onClick={() => setTab('usps')}>USPS Address API</button></li>
+        {isTabVisible('cw') && <li className="nav-item"><button className={`nav-link ${tab === 'cw' ? 'active' : ''}`} onClick={() => setTab('cw')}>ConnectWise Manage</button></li>}
+        {isTabVisible('usps') && <li className="nav-item"><button className={`nav-link ${tab === 'usps' ? 'active' : ''}`} onClick={() => setTab('usps')}>USPS Address API</button></li>}
         <li className="nav-item"><button className={`nav-link ${tab === 'pay' ? 'active' : ''}`} onClick={() => setTab('pay')}>Payment Gateways</button></li>
-        <li className="nav-item"><button className={`nav-link ${tab === 'sms' ? 'active' : ''}`} onClick={() => setTab('sms')}>Twilio / SMS</button></li>
-        <li className="nav-item"><button className={`nav-link ${tab === 'log' ? 'active' : ''}`} onClick={() => setTab('log')}>CW Sync Log</button></li>
-        <li className="nav-item"><button className={`nav-link ${tab === 'google' ? 'active' : ''}`} onClick={() => setTab('google')}>Google Workspace</button></li>
-        <li className="nav-item"><button className={`nav-link ${tab === 'ai' ? 'active' : ''}`} onClick={() => setTab('ai')}>
+        {isTabVisible('sms') && <li className="nav-item"><button className={`nav-link ${tab === 'sms' ? 'active' : ''}`} onClick={() => setTab('sms')}>Twilio / SMS</button></li>}
+        {isTabVisible('log') && <li className="nav-item"><button className={`nav-link ${tab === 'log' ? 'active' : ''}`} onClick={() => setTab('log')}>CW Sync Log</button></li>}
+        {isTabVisible('google') && <li className="nav-item"><button className={`nav-link ${tab === 'google' ? 'active' : ''}`} onClick={() => setTab('google')}>Google Workspace</button></li>}
+        {isTabVisible('ai') && <li className="nav-item"><button className={`nav-link ${tab === 'ai' ? 'active' : ''}`} onClick={() => setTab('ai')}>
           <iconify-icon icon="solar:stars-line-duotone" class="me-1"></iconify-icon>AI Assistant
-        </button></li>
+        </button></li>}
         <li className="nav-item"><button className={`nav-link ${tab === 'security' ? 'active' : ''}`} onClick={() => setTab('security')}>
           <iconify-icon icon="solar:shield-keyhole-line-duotone" class="me-1"></iconify-icon>Security
         </button></li>
-        <li className="nav-item"><button className={`nav-link ${tab === 'mobileapi' ? 'active' : ''}`} onClick={() => setTab('mobileapi')}>
+        {isTabVisible('mobileapi') && <li className="nav-item"><button className={`nav-link ${tab === 'mobileapi' ? 'active' : ''}`} onClick={() => setTab('mobileapi')}>
           <iconify-icon icon="solar:smartphone-line-duotone" class="me-1"></iconify-icon>Mobile API
-        </button></li>
+        </button></li>}
       </ul>
       </div>
 
