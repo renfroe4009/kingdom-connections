@@ -66,6 +66,7 @@ import CampaignDetail from './admin/pages/CampaignDetail.jsx';
 import AutomationsPage from './admin/pages/AutomationsPage.jsx';
 import AutomationBuilder from './admin/pages/AutomationBuilder.jsx';
 import BusinessSettings from './admin/pages/BusinessSettings.jsx';
+import ModuleManagerPage from './admin/pages/ModuleManagerPage.jsx';
 import BillingTaxReport from './admin/pages/BillingTaxReport.jsx';
 import BillingReconciliationReport from './admin/pages/BillingReconciliationReport.jsx';
 import PortalLayout from './admin/components/PortalLayout.jsx';
@@ -285,6 +286,7 @@ export default function App() {
         <Route path="roles"              element={<PermissionRoute perm="roles.manage"><RolesPage /></PermissionRoute>} />
         <Route path="settings"                   element={<PermissionRoute perm="settings.manage"><SettingsPage /></PermissionRoute>} />
         <Route path="settings/business"          element={<PermissionRoute perm="settings.manage"><BusinessSettings /></PermissionRoute>} />
+        <Route path="settings/modules"           element={<PermissionRoute perm="settings.manage"><ModuleManagerPage /></PermissionRoute>} />
         <Route path="tags"          element={<PermissionRoute perm="settings.manage"><TagsPage /></PermissionRoute>} />
         <Route path="custom-fields" element={<PermissionRoute perm="settings.manage"><CustomFieldsPage /></PermissionRoute>} />
         <Route path="pipelines"     element={<PermissionRoute perm="pipelines.access"><PipelinesPage /></PermissionRoute>} />

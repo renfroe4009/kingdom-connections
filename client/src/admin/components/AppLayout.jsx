@@ -8,126 +8,18 @@ import { ToastHost, toast } from '../../components/Toast.jsx';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { useAdminTheme } from '../../hooks/useAdminTheme.js';
 import { IntegrationsProvider } from '../context/IntegrationsContext.jsx';
+import { ModuleConfigProvider, useModuleConfig } from '../context/ModuleConfigContext.jsx';
+import { SECTIONS, adminItems } from '../navConfig.js';
 
 // `children` turns an item into a collapsible group with sub-links beneath it.
 // Permissions on children are evaluated independently from the parent.
 //
-// SECTIONS drives the top-level tab bar. Each section owns its own sidebar
-// item list — clicking a tab swaps which list is shown, and the active tab
-// is derived from the current URL (via matchPrefixes) rather than tracked
-// as separate state, so browser back/forward and direct links stay in sync.
-const SECTIONS = [
-  {
-    key: 'crm', label: 'CRM', icon: 'solar:users-group-two-rounded-bold-duotone',
-    matchPrefixes: ['/admin/dashboard', '/admin/contacts', '/admin/organizations', '/admin/duplicates', '/admin/deals', '/admin/pipeline',
-      '/admin/invoices', '/admin/transactions', '/admin/billing', '/admin/subscriptions', '/admin/maps', '/admin/tasks',
-      '/admin/activities', '/admin/import'],
-    items: [
-      { to: '/admin/dashboard',     label: 'Dashboard',     icon: 'solar:screencast-2-line-duotone' },
-      { to: '/admin/contacts',      label: 'Contacts',      icon: 'solar:user-rounded-line-duotone',          perm: 'contacts.read' },
-      { to: '/admin/organizations', label: 'Organizations', icon: 'solar:buildings-2-line-duotone',           perm: 'organizations.read' },
-      { to: '/admin/duplicates',    label: 'Duplicates',    icon: 'solar:layers-minimalistic-line-duotone',   perm: 'contacts.write' },
-      { to: '/admin/deals',         label: 'Deals',         icon: 'solar:dollar-minimalistic-bold-duotone',   perm: 'deals.read' },
-      { to: '/admin/pipeline',      label: 'Pipeline',      icon: 'solar:chart-2-line-duotone',               perm: 'deals.read' },
-      {
-        to: '/admin/invoices', label: 'Billing', icon: 'solar:bill-list-line-duotone', perm: 'invoices.read',
-        children: [
-          { to: '/admin/invoices',                   label: 'Invoices',        icon: 'solar:document-text-line-duotone' },
-          { to: '/admin/transactions',               label: 'Transactions',    icon: 'solar:card-line-duotone',             perm: 'payments.read' },
-          { to: '/admin/billing/tax-report',         label: 'Sales Tax',       icon: 'solar:bill-list-line-duotone',        perm: 'reports.view' },
-          { to: '/admin/billing/reconciliation',     label: 'Reconciliation',  icon: 'solar:shield-check-line-duotone',     perm: 'reports.view' },
-        ],
-      },
-      { to: '/admin/subscriptions', label: 'Recurring', icon: 'solar:refresh-circle-line-duotone', perm: 'subscriptions.read' },
-      { to: '/admin/maps',          label: 'Maps',          icon: 'solar:map-point-line-duotone',   perm: 'maps.view' },
-      { to: '/admin/tasks',         label: 'Tasks',         icon: 'solar:checklist-minimalistic-line-duotone', perm: 'tasks.read' },
-      { to: '/admin/activities',    label: 'Activity',      icon: 'solar:clock-circle-line-duotone' },
-      { to: '/admin/import',        label: 'CSV Import',    icon: 'solar:upload-minimalistic-line-duotone',   perm: 'import.csv' },
-    ],
-  },
-  {
-    key: 'website', label: 'Website', icon: 'solar:global-line-duotone',
-    matchPrefixes: ['/admin/website', '/admin/blog-posts', '/admin/media', '/admin/reports/seo-settings', '/admin/forms', '/admin/settings/dns'],
-    items: [
-      { to: '/admin/website/pages',        label: 'Pages',           icon: 'solar:document-line-duotone' },
-      { to: '/admin/website/settings',     label: 'Header & Footer', icon: 'solar:widget-line-duotone' },
-      { to: '/admin/blog-posts',           label: 'Blog Posts',      icon: 'solar:document-text-line-duotone' },
-      { to: '/admin/media',                label: 'Media Library',   icon: 'solar:gallery-wide-line-duotone' },
-      { to: '/admin/forms',                label: 'Forms',           icon: 'solar:checklist-minimalistic-line-duotone' },
-      { to: '/admin/reports/seo-settings', label: 'SEO',             icon: 'solar:magnifer-line-duotone' },
-      { to: '/admin/settings/dns',         label: 'DNS Manager',     icon: 'solar:server-path-line-duotone', perm: 'settings.manage' },
-      { to: '/admin/website/global-settings', label: 'Global Website Settings', icon: 'solar:settings-line-duotone', perm: 'settings.manage' },
-    ],
-  },
-  {
-    key: 'marketing', label: 'Marketing', icon: 'solar:rocket-2-bold-duotone',
-    matchPrefixes: ['/admin/comms', '/admin/marketing'],
-    items: [
-      {
-        to: '/admin/comms', label: 'Communications', icon: 'solar:chat-round-line-duotone', perm: 'comms.read',
-        children: [
-          { to: '/admin/comms',           label: 'Inbox',     icon: 'solar:inbox-line-duotone' },
-          { to: '/admin/comms/lists',     label: 'Lists',     icon: 'solar:users-group-rounded-line-duotone', perm: 'lists.read' },
-          { to: '/admin/comms/campaigns', label: 'Campaigns', icon: 'solar:rocket-2-line-duotone',           perm: 'campaigns.read' },
-          { to: '/admin/comms/templates',   label: 'Templates',   icon: 'solar:document-add-line-duotone',  perm: 'comms.templates.manage' },
-          { to: '/admin/comms/automations', label: 'Automations', icon: 'solar:bolt-circle-line-duotone',    perm: 'automations.read' },
-        ],
-      },
-      {
-        to: '/admin/marketing/social-composer', label: 'Social', icon: 'solar:share-circle-line-duotone',
-        children: [
-          { to: '/admin/marketing/social-composer', label: 'Compose',  icon: 'solar:pen-new-square-line-duotone', perm: 'campaigns.write' },
-          { to: '/admin/marketing/post-queue',      label: 'Queue',    icon: 'solar:calendar-line-duotone', perm: 'campaigns.read' },
-          { to: '/admin/marketing/accounts',        label: 'Accounts', icon: 'solar:link-circle-line-duotone', perm: 'settings.manage' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'commerce', label: 'Commerce', icon: 'solar:cart-large-2-bold-duotone',
-    matchPrefixes: ['/admin/products', '/admin/categories', '/admin/orders', '/admin/shipping', '/admin/tax', '/admin/processing-fees'],
-    items: [
-      { to: '/admin/products',        label: 'Products',        icon: 'solar:box-line-duotone',          perm: 'products.read' },
-      { to: '/admin/categories',      label: 'Categories',      icon: 'solar:folder-line-duotone',       perm: 'products.read' },
-      { to: '/admin/orders',          label: 'Orders',          icon: 'solar:bag-check-line-duotone',    perm: 'orders.read' },
-      { to: '/admin/shipping',        label: 'Shipping',        icon: 'solar:delivery-line-duotone',     perm: 'shipping.manage' },
-      { to: '/admin/tax',             label: 'Tax Rates',       icon: 'solar:bill-list-line-duotone',    perm: 'tax.manage' },
-      { to: '/admin/processing-fees', label: 'Processing Fees', icon: 'solar:card-transfer-line-duotone', perm: 'commerce.settings' },
-    ],
-  },
-  {
-    key: 'fundraising', label: 'Fundraising', icon: 'solar:heart-line-duotone',
-    matchPrefixes: ['/admin/donations', '/admin/pledges', '/admin/membership', '/admin/events', '/admin/volunteers'],
-    items: [
-      { to: '/admin/donations',       label: 'Donations',        icon: 'solar:hand-heart-line-duotone', perm: 'donations.read' },
-      { to: '/admin/pledges',         label: 'Pledges',          icon: 'solar:calendar-mark-line-duotone', perm: 'donations.read' },
-      { to: '/admin/donations/funds', label: 'Funds & Campaigns', icon: 'solar:wallet-line-duotone',     perm: 'donations.read' },
-      { to: '/admin/donations/retention', label: 'Donor Retention', icon: 'solar:refresh-circle-line-duotone', perm: 'reports.view' },
-      { to: '/admin/donations/text-to-give', label: 'Text to Give', icon: 'solar:chat-round-money-line-duotone', perm: 'settings.manage' },
-      { to: '/admin/membership',       label: 'Members',          icon: 'solar:users-group-two-rounded-line-duotone', perm: 'membership.read' },
-      { to: '/admin/membership/tiers', label: 'Membership Tiers',  icon: 'solar:medal-ribbons-star-line-duotone',     perm: 'membership.read' },
-      { to: '/admin/events',           label: 'Events',           icon: 'solar:calendar-line-duotone',        perm: 'events.read' },
-      { to: '/admin/events/calendar',  label: 'Events Calendar',  icon: 'solar:calendar-line-duotone',        perm: 'events.read' },
-      { to: '/admin/volunteers',       label: 'Volunteers',       icon: 'solar:user-heart-line-duotone',     perm: 'volunteers.read' },
-    ],
-  },
-  {
-    key: 'lms', label: 'Learning', icon: 'solar:square-academic-cap-2-bold-duotone',
-    matchPrefixes: ['/admin/lms'],
-    items: [
-      { to: '/admin/lms/courses', label: 'Courses', icon: 'solar:book-2-line-duotone', perm: 'lms.read' },
-      { to: '/admin/lms/cohorts', label: 'Cohorts',  icon: 'solar:users-group-rounded-line-duotone', perm: 'lms.read' },
-    ],
-  },
-  {
-    key: 'reports', label: 'Reports', icon: 'solar:chart-line-duotone',
-    matchPrefixes: ['/admin/reports'],
-    items: [
-      { to: '/admin/reports', label: 'Reports', icon: 'solar:chart-2-line-duotone', perm: 'reports.view' },
-      { to: '/admin/reports/builder', label: 'Report Builder', icon: 'solar:widget-2-line-duotone', perm: 'reports.view' },
-    ],
-  },
-];
+// SECTIONS (navConfig.js) drives the top-level tab bar — shared with the
+// Module Manager admin page so the two structures never drift. Each section
+// owns its own sidebar item list — clicking a tab swaps which list is shown,
+// and the active tab is derived from the current URL (via matchPrefixes)
+// rather than tracked as separate state, so browser back/forward and direct
+// links stay in sync.
 
 // First navigable path within a section — used both as the tab's own link
 // target and as the fallback when a section has no matching prefix.
@@ -150,21 +42,9 @@ function matchSection(pathname) {
   return best?.key || 'crm';
 }
 
-const adminItems = [
-  { to: '/admin/users',              label: 'Users',         icon: 'solar:users-group-rounded-line-duotone', perm: 'users.manage' },
-  { to: '/admin/roles',              label: 'Roles',         icon: 'solar:shield-user-line-duotone',         perm: 'roles.manage' },
-  { to: '/admin/pipelines',    label: 'Pipelines',     icon: 'solar:chart-square-line-duotone',        perm: 'pipelines.access' },
-  { to: '/admin/tags',         label: 'Tags',          icon: 'solar:tag-line-duotone',                 perm: 'settings.manage' },
-  { to: '/admin/custom-fields',label: 'Custom Fields', icon: 'solar:widget-add-line-duotone',          perm: 'settings.manage' },
-  { to: '/admin/portal',       label: 'Portal Users',  icon: 'solar:user-id-line-duotone',             perm: 'portal.manage' },
-  { to: '/admin/settings',           label: 'Integrations',  icon: 'solar:settings-line-duotone',            perm: 'settings.manage' },
-  { to: '/admin/settings/business',  label: 'Business',      icon: 'solar:buildings-2-line-duotone',         perm: 'settings.manage' },
-  { to: '/admin/ai-kb',        label: 'AI Knowledge Base', icon: 'solar:stars-line-duotone',           perm: 'settings.manage' },
-];
-
-function NavGroup({ item, can }) {
+function NavGroup({ item, can, isItemEnabled }) {
   const location = useLocation();
-  const visibleChildren = (item.children || []).filter((c) => !c.perm || can(c.perm));
+  const visibleChildren = (item.children || []).filter((c) => (!c.perm || can(c.perm)) && isItemEnabled(c.to));
   // Auto-expand the group when the user is on one of its sub-pages.
   const isWithinGroup = visibleChildren.some((c) =>
     location.pathname === c.to || location.pathname.startsWith(c.to + '/')
@@ -216,10 +96,11 @@ function NavGroup({ item, can }) {
   );
 }
 
-export default function AppLayout() {
+function AppLayoutInner() {
   useAdminTheme();
   const { user, logout, can, impersonating, stopImpersonating, updateDashboardPreference } = useAuth();
   const { theme, toggleTheme, secondaryColor } = useTheme();
+  const { isSectionEnabled, isItemEnabled } = useModuleConfig();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -230,8 +111,9 @@ export default function AppLayout() {
   const [moduleScroll, setModuleScroll] = useState({ canLeft: false, canRight: false });
   const { confirm, dialog: confirmDialog } = useConfirm();
 
+  const visibleSections = SECTIONS.filter((s) => isSectionEnabled(s.key));
   const activeSectionKey = matchSection(location.pathname);
-  const activeSection = SECTIONS.find((s) => s.key === activeSectionKey) || SECTIONS[0];
+  const activeSection = visibleSections.find((s) => s.key === activeSectionKey) || visibleSections[0] || SECTIONS[0];
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -285,7 +167,6 @@ export default function AppLayout() {
   const initials = `${user?.first_name?.[0] || ''}${user?.last_name?.[0] || ''}` || user?.email?.[0]?.toUpperCase() || '?';
 
   return (
-    <IntegrationsProvider>
     <div id="main-wrapper" className={sidebarOpen ? 'sidebar-open' : ''}>
       {/* Impersonation banner */}
       {impersonating && (
@@ -321,7 +202,7 @@ export default function AppLayout() {
           className="d-lg-none d-flex gap-2 px-3 pb-3 module-switcher-scroll"
           style={{ overflowX: 'auto', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch' }}
         >
-          {SECTIONS.map((s) => {
+          {visibleSections.map((s) => {
             const active = s.key === activeSectionKey;
             return (
               <button
@@ -353,9 +234,9 @@ export default function AppLayout() {
                 <i className="ti ti-dots nav-small-cap-icon fs-4"></i>
                 <span className="hide-menu">{activeSection.label}</span>
               </li>
-              {activeSection.items.filter((n) => !n.perm || can(n.perm)).map((n) => (
+              {activeSection.items.filter((n) => (!n.perm || can(n.perm)) && isItemEnabled(n.to)).map((n) => (
                 n.children
-                  ? <NavGroup key={n.to} item={n} can={can} />
+                  ? <NavGroup key={n.to} item={n} can={can} isItemEnabled={isItemEnabled} />
                   : (
                     <li className="sidebar-item" key={n.to}>
                       <NavLink
@@ -462,7 +343,7 @@ export default function AppLayout() {
                     className="d-flex align-items-center gap-2 module-switcher-scroll"
                     style={{ overflowX: 'auto', flexWrap: 'nowrap', minWidth: 0, WebkitOverflowScrolling: 'touch' }}
                   >
-                    {SECTIONS.map((s) => {
+                    {visibleSections.map((s) => {
                       const active = s.key === activeSectionKey;
                       return (
                         <button
@@ -662,6 +543,15 @@ export default function AppLayout() {
       <ToastHost />
       {confirmDialog}
     </div>
-    </IntegrationsProvider>
+  );
+}
+
+export default function AppLayout() {
+  return (
+    <ModuleConfigProvider>
+      <IntegrationsProvider>
+        <AppLayoutInner />
+      </IntegrationsProvider>
+    </ModuleConfigProvider>
   );
 }

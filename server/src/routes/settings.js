@@ -314,6 +314,20 @@ router.put('/module/:module', (req, res, next) => moduleGate(req.params.module)(
   } catch (err) { next(err); }
 });
 
+// -------- Module Manager (nav/integration visibility) --------
+// GET is readable by any authenticated user (not just settings.manage) —
+// every logged-in user's sidebar needs this to know what to hide, same as
+// /api/integrations/status being requireAuth-only rather than permission-gated.
+const moduleManager = require('../services/moduleManager');
+
+router.get('/module-manager', async (_req, res, next) => {
+  try { res.json(await moduleManager.get()); } catch (err) { next(err); }
+});
+
+router.put('/module-manager', requirePermission('settings.manage'), async (req, res, next) => {
+  try { res.json(await moduleManager.set(req.body)); } catch (err) { next(err); }
+});
+
 // -------- Generic KV --------
 router.get('/kv/:key', requirePermission('settings.manage'), async (req, res, next) => {
   try {
