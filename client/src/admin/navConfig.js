@@ -144,4 +144,9 @@ export const INTEGRATIONS = [
   { key: 'sms',         label: 'Twilio / SMS',        tab: 'sms',       icon: 'solar:phone-calling-rounded-line-duotone' },
   { key: 'ai',          label: 'AI Assistant',        tab: 'ai',        icon: 'solar:stars-line-duotone' },
   { key: 'mobileapi',   label: 'Mobile API',          tab: 'mobileapi', icon: 'solar:smartphone-line-duotone' },
+  // No `tab` — this hides just the Authorize.Net panel within the Payment
+  // Gateways tab (SettingsPage.jsx checks isIntegrationEnabled('authnet')
+  // directly), not a whole tab like every other entry above. Valor's panel
+  // in that same tab is unaffected either way.
+  { key: 'authnet',     label: 'Authorize.Net gateway', icon: 'solar:card-line-duotone' },
 ];

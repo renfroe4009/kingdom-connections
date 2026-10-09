@@ -98,6 +98,7 @@ router.post('/public/signup', async (req, res, next) => {
     const {
       getGateway, valorVaultAddCustomer, valorVaultAddPaymentProfile,
       valorVaultCharge, mapValorVaultChargeResponse, resolveCardholderName,
+      computeProcessingFee,
     } = require('../services/gateways');
     const { refreshInvoiceTotalsById } = require('../routes/invoices');
 
@@ -117,6 +118,14 @@ router.post('/public/signup', async (req, res, next) => {
 
     const cfg = await getGateway('valor', null);
     if (!cfg) return res.status(400).json({ error: 'No active Valor gateway configured' });
+
+    // Member signups are always individuals (never org-billed), same gate
+    // donations.js's /public/recurring uses: only charge the convenience fee
+    // if the gateway allows consumer (non-B2B) surcharging. This route had
+    // no fee handling at all before — every other Valor charge call site
+    // did, which meant a membership signup silently never charged it.
+    const fee = !cfg.b2b_only ? computeProcessingFee({ cfg, baseAmount: amount }) : null;
+    const chargeAmount = Math.round((amount + (fee?.amount || 0)) * 100) / 100;
 
     // Passage.js's cardholder-name field isn't always populated (donor left it
     // blank, or Passage didn't render it) — Valor's vault/charge endpoints
@@ -182,7 +191,7 @@ router.post('/public/signup', async (req, res, next) => {
        VALUES
          (:payment_token, :invoice_number, :contact_id, :issue_date, :due_date, 'USD',
           :subtotal, 0, 0, 0, 0, :total, 0, :total, 'sent', :memo)`,
-      { payment_token: paymentToken, invoice_number: number, contact_id: contactId, issue_date: today, due_date: today, subtotal: amount, total: amount, memo }
+      { payment_token: paymentToken, invoice_number: number, contact_id: contactId, issue_date: today, due_date: today, subtotal: amount, total: chargeAmount, memo }
     );
     const invoiceId = inv.insertId;
     await db.query(
@@ -190,12 +199,20 @@ router.post('/public/signup', async (req, res, next) => {
        VALUES (:invoice_id, :desc, 1, :amount, :amount, 0)`,
       { invoice_id: invoiceId, desc: memo, amount }
     );
+    if (fee?.amount > 0) {
+      await db.query(
+        `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, amount, sort_order)
+         VALUES (:invoice_id, :desc, 1, :amount, :amount, 1)`,
+        { invoice_id: invoiceId, desc: fee.label, amount: fee.amount }
+      );
+    }
 
     let chargeJson;
     try {
       chargeJson = await valorVaultCharge(cfg, {
-        card_token: body.card_token, amount, invoicenumber: number,
+        card_token: body.card_token, amount: chargeAmount, invoicenumber: number,
         cardholdername: cardholderName, email: donor.email,
+        surcharge_amount: fee?.amount || 0,
       });
     } catch (chargeErr) {
       return res.status(402).json({ error: chargeErr.message || 'Card could not be charged' });
@@ -206,13 +223,16 @@ router.post('/public/signup', async (req, res, next) => {
     const [pay] = await db.query(
       `INSERT INTO payments
          (invoice_id, gateway, method, amount, currency, status,
+          fee_amount, fee_label,
           external_txn_id, external_auth_code, card_last4, card_brand, card_expiry, card_holder_name,
           processor_message, processor_code, processor_response, received_at, receipt_token, vault_profile_id)
        VALUES
-         (:iid, 'valor', 'card', :amount, 'USD', :status, :txnId, :auth, :last4, :brand, :exp, :holder,
+         (:iid, 'valor', 'card', :amount, 'USD', :status, :fee, :flab, :txnId, :auth, :last4, :brand, :exp, :holder,
           :pmsg, :pcode, CAST(:raw AS JSON), NOW(), :rtok, :vaultProfileId)`,
       {
-        iid: invoiceId, amount, status: mapped?.status || 'failed', txnId: mapped?.txnId || null, auth: mapped?.auth || null,
+        iid: invoiceId, amount: chargeAmount, status: mapped?.status || 'failed',
+        fee: fee?.amount || null, flab: fee?.label || null,
+        txnId: mapped?.txnId || null, auth: mapped?.auth || null,
         last4: mapped?.last4 || body.last4 || null, brand: mapped?.brand || body.card_brand || null,
         exp: mapped?.exp || body.expiry || null, holder: mapped?.holder || body.cardholder_name || null,
         pmsg: mapped?.pmsg || null, pcode: mapped?.pcode || null, raw: JSON.stringify(chargeJson),
