@@ -696,6 +696,8 @@ export default function SettingsPage() {
             </div>
             {payMsg && <div className="alert alert-info">{payMsg}</div>}
 
+            {isIntegrationEnabled('authnet') && (
+            <>
             <h6 className="mt-2 fw-bold">Authorize.Net (Accept Hosted)</h6>
             <div className="row g-2 mb-3">
               <div className="col-md-3"><label className="form-label">Mode</label>
@@ -729,6 +731,8 @@ export default function SettingsPage() {
             <QuickBooksPanel id="an" cfg={authnet} set={setAuthnet} />
 
             <hr />
+            </>
+            )}
 
             <h6 className="mt-2 fw-bold">Valor PayTech (Hosted Checkout)</h6>
             <div className="row g-2 mb-3">
