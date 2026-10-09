@@ -1224,6 +1224,76 @@ function mapValorVaultChargeResponse(json) {
   };
 }
 
+// Void an unsettled Valor sale — full reversal, same day only. Confirmed
+// against Valor's own published API reference (valorapi.readme.io/reference/
+// void-api-5): POST /?void_api, txn_type 'void', ref_txn_id = the original
+// sale's txnid. Valor rejects this once the transaction has already settled
+// — use valorRefund instead (see payments.js's /:id/void and /:id/refund
+// routes, which pick the right one off payments.settled_at).
+async function valorVoid(cfg, { ref_txn_id, amount, surcharge_amount = 0 }) {
+  const baseUrl = cfg.mode === 'live'
+    ? 'https://securelink.valorpaytech.com:4430'
+    : 'https://securelink-staging.valorpaytech.com:4430';
+  const res = await fetch(`${baseUrl}/?void_api`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      appid:              cfg.app_id  || '',
+      appkey:             cfg.app_key || '',
+      epi:                String(cfg.epi_id || ''),
+      txn_type:           'void',
+      ref_txn_id:         String(ref_txn_id),
+      amount:             Number(amount).toFixed(2),
+      surchargeIndicator: surcharge_amount > 0 ? '1' : '0',
+    }),
+  });
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch (_) { json = { raw: text }; }
+  // eslint-disable-next-line no-console
+  console.log('[valorVoid] ref_txn_id=%s status=%s body=', ref_txn_id, res.status, json);
+  return json;
+}
+
+// Refund a settled Valor sale (credit back to the card). Confirmed against
+// Valor's own published API reference (valorapi.readme.io/reference/
+// direct-sale-auth-copy-1, "Refund Offset Sale"): POST /?issuerefund,
+// txn_type 'refund', sale_refund '1', ref_txn_id = the original sale's txnid.
+async function valorRefund(cfg, { ref_txn_id, amount, invoicenumber, surcharge_amount = 0 }) {
+  const baseUrl = cfg.mode === 'live'
+    ? 'https://securelink.valorpaytech.com:4430'
+    : 'https://securelink-staging.valorpaytech.com:4430';
+  const res = await fetch(`${baseUrl}/?issuerefund`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      appid:              cfg.app_id  || '',
+      appkey:             cfg.app_key || '',
+      epi:                String(cfg.epi_id || ''),
+      txn_type:           'refund',
+      ref_txn_id:         String(ref_txn_id),
+      amount:             Number(amount).toFixed(2),
+      surchargeIndicator: surcharge_amount > 0 ? '1' : '0',
+      invoicenumber:      String(invoicenumber || '').slice(0, 12),
+      sale_refund:        '1',
+    }),
+  });
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch (_) { json = { raw: text }; }
+  // eslint-disable-next-line no-console
+  console.log('[valorRefund] ref_txn_id=%s status=%s body=', ref_txn_id, res.status, json);
+  return json;
+}
+
+// Shared by valorVoid/valorRefund — Valor returns HTTP 200 for a logical
+// decline sometimes (not just the 400 shown in their docs' error example),
+// so check error_no the same way mapValorVaultChargeResponse does rather
+// than trusting res.ok alone.
+function isValorReversalApproved(json) {
+  return String(json?.error_no || '').toUpperCase() === 'S00';
+}
+
 // Step 5b — ACH charge via /?pagesale (bank account, no tokenization).
 // Passage.js POSTs raw bank fields to our server; we forward them to Valor.
 async function valorAchCharge(cfg, {
@@ -1546,6 +1616,88 @@ function mapAuthnetVaultChargeResponse(json) {
   };
 }
 
+// Void an unsettled Authorize.Net transaction — full reversal, same day only.
+// No card data needed; Authorize.Net rejects this once the transaction has
+// already settled (use authnetRefund instead — see payments.js's /:id/void
+// and /:id/refund routes, which pick the right one off payments.settled_at).
+async function authnetVoid(cfg, { transId }) {
+  const endpoint = cfg.mode === 'live'
+    ? 'https://api.authorize.net/xml/v1/request.api'
+    : 'https://apitest.authorize.net/xml/v1/request.api';
+  const auth = { name: cfg.api_login_id, transactionKey: cfg.transaction_key };
+  const body = {
+    createTransactionRequest: {
+      merchantAuthentication: auth,
+      transactionRequest: { transactionType: 'voidTransaction', refTransId: String(transId) },
+    },
+  };
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = (await res.text()).replace(/^﻿/, '');
+  let json;
+  try { json = JSON.parse(text); } catch (_) { json = { raw: text }; }
+  // eslint-disable-next-line no-console
+  console.log('[authnetVoid] transId=%s status=%s body=', transId, res.status, json);
+  return json;
+}
+
+// Refund (credit) a settled Authorize.Net transaction. Authorize.Net's
+// refundTransaction requires payment card data that matches the original —
+// the last 4 digits are sufficient, and expirationDate can be "XXXX" when
+// refTransId links back to the original authorized transaction (standard
+// Authorize.Net workaround for not re-collecting the real expiry).
+async function authnetRefund(cfg, { transId, amount, card_last4, card_expiry }) {
+  const endpoint = cfg.mode === 'live'
+    ? 'https://api.authorize.net/xml/v1/request.api'
+    : 'https://apitest.authorize.net/xml/v1/request.api';
+  const auth = { name: cfg.api_login_id, transactionKey: cfg.transaction_key };
+  const body = {
+    createTransactionRequest: {
+      merchantAuthentication: auth,
+      transactionRequest: {
+        transactionType: 'refundTransaction',
+        amount: Number(amount).toFixed(2),
+        payment: {
+          creditCard: {
+            cardNumber: String(card_last4 || '').slice(-4),
+            expirationDate: card_expiry || 'XXXX',
+          },
+        },
+        refTransId: String(transId),
+      },
+    },
+  };
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = (await res.text()).replace(/^﻿/, '');
+  let json;
+  try { json = JSON.parse(text); } catch (_) { json = { raw: text }; }
+  // eslint-disable-next-line no-console
+  console.log('[authnetRefund] transId=%s status=%s body=', transId, res.status, json);
+  return json;
+}
+
+// Shared by both authnetVoid and authnetRefund — same transactionResponse
+// shape as mapAuthnetVaultChargeResponse, just named for its call site.
+function mapAuthnetReversalResponse(json) {
+  const tx = json?.createTransactionResponse?.transactionResponse || {};
+  const msgs = tx.messages?.message || [];
+  const errs = tx.errors?.error || [];
+  const resultCode = json?.createTransactionResponse?.messages?.resultCode;
+  const approved = resultCode === 'Ok' && String(tx.responseCode) === '1';
+  return {
+    approved,
+    external_txn_id: tx.transId || null,
+    message: msgs[0]?.description || errs[0]?.errorText || (approved ? 'Approved' : 'Failed'),
+  };
+}
+
 module.exports = {
   getGateway,
   getDefaultGateway,
@@ -1575,4 +1727,11 @@ module.exports = {
   mapValorVaultChargeResponse,
   resolveCardholderName,
   describeValorError,
+  // Void / refund
+  authnetVoid,
+  authnetRefund,
+  mapAuthnetReversalResponse,
+  valorVoid,
+  valorRefund,
+  isValorReversalApproved,
 };

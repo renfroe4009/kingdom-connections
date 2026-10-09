@@ -15,6 +15,8 @@ const {
   valorVaultCharge, mapValorVaultChargeResponse,
   valorVaultAddCustomer, valorVaultAddACHProfile, valorVaultAchCharge,
   computeProcessingFee, resolveCardholderName,
+  authnetVoid, authnetRefund, mapAuthnetReversalResponse,
+  valorVoid, valorRefund, isValorReversalApproved,
 } = require('../services/gateways');
 const {
   reconcileAllActiveGateways, listRecentRuns,
@@ -2180,6 +2182,12 @@ router.post('/:id/refresh', requirePermission('payments.write'), async (req, res
 // later; for now we flip local state and log the action so the UI matches
 // what the operator did. Returns 409 if the txn is already in a terminal
 // state.
+// Void an unsettled gateway transaction — full reversal, same day only (no
+// money has moved to the merchant's bank yet). A manually-recorded payment
+// (cash/check/wire — no `gateway`/`external_txn_id`) has nothing to reverse
+// at a processor, so it's a local-only status flip; a real card/ACH payment
+// gets an actual void call to Authorize.Net or Valor first, and the local
+// row only flips if that call is actually approved.
 router.post('/:id/void', requirePermission('payments.write'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -2195,12 +2203,35 @@ router.post('/:id/void', requirePermission('payments.write'), async (req, res, n
     if (cur === 'refunded' || cur === 'failed') {
       return res.status(409).json({ error: `Cannot void a ${cur} transaction` });
     }
+    if (pay.settled_at) {
+      return res.status(409).json({ error: 'This transaction has already settled and can no longer be voided — use Refund instead.' });
+    }
+
+    let processorMessage = req.body?.reason || 'Voided from CRM';
+    if (pay.gateway && pay.external_txn_id) {
+      const cfg = await getGateway(pay.gateway, pay.gateway_mode);
+      if (!cfg) return res.status(409).json({ error: `No active ${pay.gateway} gateway configuration found — cannot void at the processor.` });
+
+      if (pay.gateway === 'authnet') {
+        const json = await authnetVoid(cfg, { transId: pay.external_txn_id });
+        const mapped = mapAuthnetReversalResponse(json);
+        if (!mapped.approved) return res.status(402).json({ error: `Void rejected by Authorize.Net: ${mapped.message}` });
+        processorMessage = `Voided at Authorize.Net (txn ${mapped.external_txn_id || pay.external_txn_id})`;
+      } else if (pay.gateway === 'valor') {
+        const json = await valorVoid(cfg, { ref_txn_id: pay.external_txn_id, amount: pay.amount });
+        if (!isValorReversalApproved(json)) return res.status(402).json({ error: `Void rejected by Valor: ${json.msg || json.desc || json.error_no || 'Unknown error'}` });
+        processorMessage = `Voided at Valor (txn ${json.txnid || pay.external_txn_id})`;
+      }
+      // Any other gateway value: fall through and only flip the local row —
+      // same behavior as a manual payment, rather than silently no-op.
+    }
+
     await db.query(
       `UPDATE payments
           SET status = 'voided',
-              processor_message = COALESCE(:msg, processor_message)
+              processor_message = :msg
         WHERE id = :id`,
-      { msg: req.body?.reason || 'Voided from CRM', id });
+      { msg: processorMessage, id });
     // Voided transactions don't count toward amount_paid, so recompute the
     // invoice balance.
     await refreshInvoiceAfterPayment(pay.invoice_id);
@@ -2232,7 +2263,11 @@ router.post('/:id/void', requirePermission('payments.write'), async (req, res, n
   } catch (err) { next(err); }
 });
 
-// Refund (gateway-aware stub — flips local row, real gateway call can be wired later)
+// Refund a settled gateway transaction — credits the cardholder's account.
+// Same gateway-aware-or-local-only split as /void above; the difference is
+// settlement timing (see the comment there) — this route rejects an
+// unsettled transaction and points the caller at /void instead, since
+// neither Authorize.Net nor Valor's refund call works pre-settlement.
 router.post('/:id/refund', requirePermission('payments.write'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -2244,6 +2279,40 @@ router.post('/:id/refund', requirePermission('payments.write'), async (req, res,
          LEFT JOIN contacts c ON c.id = i.contact_id
         WHERE p.id = :id`, { id });
     if (!pay) return res.status(404).json({ error: 'Not found' });
+    const cur = String(pay.status).toLowerCase();
+    if (cur === 'refunded' || cur === 'voided' || cur === 'failed') {
+      return res.status(409).json({ error: `Cannot refund a ${cur} transaction` });
+    }
+    const refundAmount = amount || Number(pay.amount);
+
+    let refundTxnId = req.body?.refund_txn_id || null;
+    if (pay.gateway && pay.external_txn_id) {
+      if (!pay.settled_at) {
+        return res.status(409).json({ error: 'This transaction has not settled yet — use Void instead (no funds have moved to the bank yet).' });
+      }
+      const cfg = await getGateway(pay.gateway, pay.gateway_mode);
+      if (!cfg) return res.status(409).json({ error: `No active ${pay.gateway} gateway configuration found — cannot refund at the processor.` });
+
+      if (pay.gateway === 'authnet') {
+        const json = await authnetRefund(cfg, {
+          transId: pay.external_txn_id, amount: refundAmount,
+          card_last4: pay.card_last4, card_expiry: pay.card_expiry,
+        });
+        const mapped = mapAuthnetReversalResponse(json);
+        if (!mapped.approved) return res.status(402).json({ error: `Refund rejected by Authorize.Net: ${mapped.message}` });
+        refundTxnId = mapped.external_txn_id || refundTxnId;
+      } else if (pay.gateway === 'valor') {
+        const [[inv]] = await db.query('SELECT invoice_number FROM invoices WHERE id = :id', { id: pay.invoice_id });
+        const json = await valorRefund(cfg, {
+          ref_txn_id: pay.external_txn_id, amount: refundAmount,
+          invoicenumber: inv?.invoice_number,
+        });
+        if (!isValorReversalApproved(json)) return res.status(402).json({ error: `Refund rejected by Valor: ${json.msg || json.desc || json.error_no || 'Unknown error'}` });
+        refundTxnId = json.txnid || refundTxnId;
+      }
+      // Any other gateway value: fall through and only flip the local row.
+    }
+
     await db.query(
       `UPDATE payments
           SET status = 'refunded',
@@ -2251,11 +2320,11 @@ router.post('/:id/refund', requirePermission('payments.write'), async (req, res,
               refunded_at = NOW(),
               refund_txn_id = :txn
         WHERE id = :id`,
-      { amt: amount || Number(pay.amount), txn: req.body?.refund_txn_id || null, id });
+      { amt: refundAmount, txn: refundTxnId, id });
     await refreshInvoiceAfterPayment(pay.invoice_id);
     await logActivity({
       userId: req.user.id, entityType: 'invoice', entityId: pay.invoice_id,
-      action: 'refunded', description: `Refund recorded $${(amount || pay.amount).toFixed(2)}` });
+      action: 'refunded', description: `Refund recorded $${refundAmount.toFixed(2)}` });
 
     // Send refund receipt email if contact has an email address
     if (pay.contact_email) {
