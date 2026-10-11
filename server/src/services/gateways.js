@@ -127,8 +127,17 @@ function buildLevel3({ cfg, invoice, lineItems }) {
 // amount charged so the customer sees the fee up front (required for
 // surcharge regulatory disclosure).
 
-function computeProcessingFee({ cfg, baseAmount }) {
+function computeProcessingFee({ cfg, baseAmount, method }) {
   if (!cfg || cfg.fee_mode === 'none' || !cfg.supports_surcharge) return null;
+  // ACH is excluded by default — card-network surcharge rules exist because
+  // of interchange cost on cards, not bank transfers, and surcharging the
+  // cheapest payment option tends to just push people back to card. Only
+  // charge ACH too when the gateway is explicitly configured to apply the
+  // fee to everything (fee_applies_to: 'all'); 'credit_only' and
+  // 'credit_and_debit' both mean "card, not ACH" here — this integration
+  // doesn't retrieve credit-vs-debit funding type from the gateway at charge
+  // time, so that finer distinction isn't enforced beyond card-vs-ACH.
+  if (method === 'ach' && cfg.fee_applies_to !== 'all') return null;
   const pct   = Number(cfg.fee_percent || 0) / 100;
   const fixed = Number(cfg.fee_fixed   || 0);
   const raw   = Number(baseAmount) * pct + fixed;
