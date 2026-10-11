@@ -4,7 +4,8 @@ import PageHeader from '../../components/PageHeader.jsx';
 
 const empty = {
   gateway: 'valor', fee_type: 'percent', fee_percent: '', fee_flat: '',
-  apply_to_tax: false, apply_to_ship: false, label: 'Processing Fee', is_active: true,
+  apply_to_tax: false, apply_to_ship: false, apply_to_ach: false,
+  label: 'Processing Fee', is_active: true,
 };
 
 export default function ProcessingFeesPage() {
@@ -18,6 +19,7 @@ export default function ProcessingFeesPage() {
         gateway: r.data.gateway, fee_type: r.data.fee_type,
         fee_percent: r.data.fee_percent ?? '', fee_flat: r.data.fee_flat ?? '',
         apply_to_tax: !!r.data.apply_to_tax, apply_to_ship: !!r.data.apply_to_ship,
+        apply_to_ach: !!r.data.apply_to_ach,
         label: r.data.label || 'Processing Fee', is_active: !!r.data.is_active,
       });
     });
@@ -69,6 +71,11 @@ export default function ProcessingFeesPage() {
             <div className="col-md-6 form-check form-switch mt-3">
               <input className="form-check-input" type="checkbox" checked={form.apply_to_ship} onChange={(e) => setForm({ ...form, apply_to_ship: e.target.checked })} id="pf-ship" />
               <label className="form-check-label" htmlFor="pf-ship">Apply to shipping amount</label>
+            </div>
+            <div className="col-md-6 form-check form-switch mt-3">
+              <input className="form-check-input" type="checkbox" checked={form.apply_to_ach} onChange={(e) => setForm({ ...form, apply_to_ach: e.target.checked })} id="pf-ach" />
+              <label className="form-check-label" htmlFor="pf-ach">Apply to ACH (bank) payments</label>
+              <div className="form-text">Off by default — card-network surcharge rules exist because of card interchange cost, not bank transfers.</div>
             </div>
             <div className="col-12 mt-3">
               <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>

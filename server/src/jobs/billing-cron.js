@@ -328,11 +328,11 @@ async function tagRecurringDonation({ source, entityType, paymentId, amount }) {
 // the storefront (checkout.js), just applied here since recurring auto-pay
 // bypasses those endpoints entirely and charges the vault profile directly.
 // Returns the amount actually charged (base + fee, if any).
-async function applyAutoChargeFee({ cfg, source, invoiceId, baseAmount }) {
+async function applyAutoChargeFee({ cfg, source, invoiceId, baseAmount, method }) {
   const { computeProcessingFee } = require('../services/gateways');
   const isB2B = Boolean(source.organization_id);
   const feeAllowed = !cfg.b2b_only || isB2B;
-  const fee = feeAllowed ? computeProcessingFee({ cfg, baseAmount }) : null;
+  const fee = feeAllowed ? computeProcessingFee({ cfg, baseAmount, method }) : null;
   if (!fee?.amount) return { fee: null, chargeAmount: baseAmount };
 
   const [[{ lineCount }]] = await db.query(
@@ -408,7 +408,7 @@ async function attemptAutoCharge({ source, entityType, invoiceId, amount }) {
       return { ok: false, skipped: true, reason: 'no_gateway_config' };
     }
 
-    const { fee, chargeAmount } = await applyAutoChargeFee({ cfg, source, invoiceId, baseAmount: amount });
+    const { fee, chargeAmount } = await applyAutoChargeFee({ cfg, source, invoiceId, baseAmount: amount, method: isAch ? 'ach' : 'card' });
 
     let chargeJson;
     try {
@@ -418,6 +418,8 @@ async function attemptAutoCharge({ source, entityType, invoiceId, amount }) {
         // unlike the card path, the mandatory processing-fee surcharge
         // computed above isn't passed through here — Valor's ACH sale API
         // has no surcharge_amount field the way /?pagesale's card path does.
+        // (computeProcessingFee returns null for ACH unless fee_applies_to
+        // is 'all', so chargeAmount === baseAmount in the default config.)
         chargeJson = await valorVaultAchCharge(cfg, {
           vault_id:           profile.valor_vault_id,
           payment_profile_id: profile.valor_payment_profile_id,

@@ -667,20 +667,39 @@ router.post('/public/ach-charge/:invoiceId', publicPaymentLimiter, express.urlen
     const cfg = await getGateway('valor', null);
     if (!cfg) return res.send(htmlResult({ type: 'PASSAGE_ACH_RESULT', status: 'failed', error: 'No active Valor gateway configured.' }));
 
-    const chargeAmount = Number(inv.balance_due);
+    // Fee is OFF for ACH by default (computeProcessingFee returns null for
+    // method: 'ach' unless fee_applies_to is 'all') — this route had no fee
+    // handling at all before, which happened to already match that default,
+    // but silently: turning fee_applies_to to 'all' did nothing here.
+    const isB2B = Boolean(inv.organization_id);
+    const feeAllowed = !cfg.b2b_only || isB2B;
+    const fee = feeAllowed ? computeProcessingFee({ cfg, baseAmount: Number(inv.balance_due), method: 'ach' }) : null;
+    const chargeAmount = Math.round((Number(inv.balance_due) + (fee?.amount || 0)) * 100) / 100;
+    if (fee?.amount > 0) {
+      const [[{ lineCount }]] = await db.query(
+        'SELECT COUNT(*) AS lineCount FROM invoice_line_items WHERE invoice_id = :id', { id: invoiceId });
+      await db.query(
+        `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, amount, sort_order)
+         VALUES (:invoice_id, :desc, 1, :amount, :amount, :sort_order)`,
+        { invoice_id: invoiceId, desc: fee.label, amount: fee.amount, sort_order: lineCount }
+      );
+    }
+
     const receiptToken = crypto.randomBytes(32).toString('hex');
     const customerIp = req.ip || null; // security remediation H-06
 
     const [ins] = await db.query(
       `INSERT INTO payments
          (invoice_id, gateway, method, amount, currency, status,
-          gateway_mode, customer_ip, card_holder_name, receipt_token)
+          fee_amount, fee_label, gateway_mode, customer_ip, card_holder_name, receipt_token)
        VALUES (:iid, 'valor', 'ach', :amt, :cur, 'pending',
-               :gmode, :cip, :holder, :rtok)`,
+               :fee, :flab, :gmode, :cip, :holder, :rtok)`,
       {
         iid:    invoiceId,
         amt:    Number(chargeAmount.toFixed(2)),
         cur:    inv.currency || 'USD',
+        fee:    fee?.amount || null,
+        flab:   fee?.label || null,
         gmode:  cfg.mode || null,
         cip:    customerIp,
         holder: account_holder_name || null,
@@ -855,6 +874,13 @@ async function chargeVaultAchAndCreateSubscription({
   const today = new Date().toISOString().slice(0, 10);
   const paymentToken = crypto.randomBytes(32).toString('hex');
 
+  // Fee is OFF for ACH by default — see computeProcessingFee's method:'ach'
+  // gate. Both callers (membership, recurring donation) are always
+  // individuals, never org-billed, same as their card equivalents
+  // (donations.js/membership.js's /public/recurring and /public/signup).
+  const fee = !cfg.b2b_only ? computeProcessingFee({ cfg, baseAmount: amount, method: 'ach' }) : null;
+  const chargeAmount = Math.round((amount + (fee?.amount || 0)) * 100) / 100;
+
   const [inv] = await db.query(
     `INSERT INTO invoices
        (payment_token, invoice_number, contact_id, issue_date, due_date, currency,
@@ -862,8 +888,8 @@ async function chargeVaultAchAndCreateSubscription({
         amount_paid, balance_due, status, memo)
      VALUES
        (:payment_token, :invoice_number, :contact_id, :issue_date, :due_date, 'USD',
-        :amount, 0, 0, 0, 0, :amount, 0, :amount, 'sent', :memo)`,
-    { payment_token: paymentToken, invoice_number: number, contact_id: contactId, issue_date: today, due_date: today, amount, memo }
+        :amount, 0, 0, 0, 0, :total, 0, :total, 'sent', :memo)`,
+    { payment_token: paymentToken, invoice_number: number, contact_id: contactId, issue_date: today, due_date: today, amount, total: chargeAmount, memo }
   );
   const invoiceId = inv.insertId;
   await db.query(
@@ -871,10 +897,17 @@ async function chargeVaultAchAndCreateSubscription({
      VALUES (:invoice_id, :desc, 1, :amount, :amount, 0)`,
     { invoice_id: invoiceId, desc: memo, amount }
   );
+  if (fee?.amount > 0) {
+    await db.query(
+      `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, amount, sort_order)
+       VALUES (:invoice_id, :desc, 1, :amount, :amount, 1)`,
+      { invoice_id: invoiceId, desc: fee.label, amount: fee.amount }
+    );
+  }
 
   let chargeJson;
   try {
-    chargeJson = await valorVaultAchCharge(cfg, { vault_id: vaultId, payment_profile_id: achProfileId, amount, invoicenumber: number, email, ach_txn_type: achTxnType });
+    chargeJson = await valorVaultAchCharge(cfg, { vault_id: vaultId, payment_profile_id: achProfileId, amount: chargeAmount, invoicenumber: number, email, ach_txn_type: achTxnType });
   } catch (chargeErr) {
     return { ok: false, error: chargeErr.message || 'Your bank account could not be charged.' };
   }
@@ -889,13 +922,15 @@ async function chargeVaultAchAndCreateSubscription({
   const [pay] = await db.query(
     `INSERT INTO payments
        (invoice_id, gateway, method, amount, currency, status,
+        fee_amount, fee_label,
         external_txn_id, external_auth_code, card_holder_name,
         processor_message, processor_code, processor_response, received_at, receipt_token, vault_profile_id)
      VALUES
-       (:iid, 'valor', 'ach', :amount, 'USD', :status, :txnId, :auth, :holder,
+       (:iid, 'valor', 'ach', :amount, 'USD', :status, :fee, :flab, :txnId, :auth, :holder,
         :pmsg, :pcode, CAST(:raw AS JSON), NOW(), :rtok, :vaultProfileId)`,
     {
-      iid: invoiceId, amount, status: mapped?.status || 'failed',
+      iid: invoiceId, amount: chargeAmount, status: mapped?.status || 'failed',
+      fee: fee?.amount || null, flab: fee?.label || null,
       txnId: mapped?.txnId || null, auth: mapped?.auth || null, holder: mapped?.holder || null,
       pmsg: mapped?.pmsg || null, pcode: mapped?.pcode || null, raw: JSON.stringify(chargeJson),
       rtok: receiptToken, vaultProfileId,

@@ -181,9 +181,12 @@ async function calcShipping({ shipping_rate_id, subtotal, weight_oz }) {
 // The shared gateway fee is gated by b2b_only, which always zeroes it out for
 // storefront orders since retail customers are never billed as an org — this
 // dedicated table is what actually lets a processing fee apply at checkout.
-async function calcCommerceProcessingFee({ subtotal, shipping, tax }) {
+async function calcCommerceProcessingFee({ subtotal, shipping, tax, method }) {
   const [[cfg]] = await db.query('SELECT * FROM processing_fee_settings ORDER BY id LIMIT 1');
   if (!cfg || !cfg.is_active) return { amount: 0, label: null };
+  // ACH excluded by default, same reasoning as gateways.js's
+  // computeProcessingFee — only charge it when explicitly turned on.
+  if (method === 'ach' && !cfg.apply_to_ach) return { amount: 0, label: null };
   const base = subtotal + (cfg.apply_to_ship ? shipping : 0) + (cfg.apply_to_tax ? tax : 0);
   let amount = 0;
   if (cfg.fee_type === 'percent') amount = base * Number(cfg.fee_percent || 0) / 100;
@@ -325,7 +328,7 @@ async function buildPendingOrder(d, method, customerIp, contactIdOverride) {
 
   const cfg = await getDefaultGateway();
   if (!isFreeOrder && (!cfg || cfg.gateway !== 'valor')) throw Object.assign(new Error('No active payment gateway configured'), { status: 400 });
-  const fee = isFreeOrder ? { amount: 0, label: null } : await calcCommerceProcessingFee({ subtotal, shipping, tax });
+  const fee = isFreeOrder ? { amount: 0, label: null } : await calcCommerceProcessingFee({ subtotal, shipping, tax, method });
   const total = Math.round((subtotal + shipping + tax + fee.amount) * 100) / 100;
   // Security remediation M-02 — final sanity assertion before this total is
   // ever handed to a charge call. The qty validation added to cart.js
