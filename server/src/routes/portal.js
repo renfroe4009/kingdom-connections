@@ -592,7 +592,7 @@ router.get('/subscriptions', async (req, res, next) => {
             GROUP BY i.subscription_id
          ) pay ON pay.subscription_id = s.id
         WHERE (${conds.join(' OR ')})
-          AND NOT ${wontRenewSql('s')}
+          AND NOT (s.membership_tier_id IS NOT NULL AND ${wontRenewSql('s')})
         ORDER BY s.next_run_date`, params);
     res.json({ rows });
   } catch (err) { next(err); }
