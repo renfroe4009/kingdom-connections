@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../../../api/client.js';
+import { parseTierBenefits } from '../../../utils/tierBenefits.js';
 
 const STATUS_TONE = { active: 'success', paused: 'warning', canceled: 'secondary', completed: 'secondary' };
 
@@ -22,8 +23,7 @@ export default function PortalMembership() {
       )}
 
       {rows.map((m) => {
-        let benefits = [];
-        try { benefits = typeof m.benefits_json === 'string' ? JSON.parse(m.benefits_json) : (m.benefits_json || []); } catch { /* ignore */ }
+        const benefits = parseTierBenefits(m.benefits_json).features;
         return (
           <div className="card mb-3" key={m.subscription_id}>
             <div className="card-body">

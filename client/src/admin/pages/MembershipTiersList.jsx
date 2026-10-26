@@ -8,11 +8,12 @@ import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { parseTierBenefits } from '../../utils/tierBenefits.js';
 
 function blankTier() {
   return {
     id: null, name: '', slug: '', description: '', price: '',
-    interval_unit: 'year', interval_count: 1, benefits: [''], is_active: true, sort_order: 0,
+    interval_unit: 'year', interval_count: 1, benefits: [''], benefitsMeta: {}, is_active: true, sort_order: 0,
   };
 }
 
@@ -36,12 +37,14 @@ export default function MembershipTiersList() {
 
   function openNew() { setForm(blankTier()); setFormError(''); setShow(true); }
   function openEdit(t) {
-    let benefits = [];
-    try { benefits = typeof t.benefits_json === 'string' ? JSON.parse(t.benefits_json) : (t.benefits_json || []); } catch { /* ignore */ }
+    // Only the features list is edited here — badge/cta/image ride along
+    // untouched so a save keeps the /join card's gold highlight, button label
+    // and photo.
+    const { features, ...benefitsMeta } = parseTierBenefits(t.benefits_json);
     setForm({
       id: t.id, name: t.name, slug: t.slug, description: t.description || '',
       price: t.price, interval_unit: t.interval_unit, interval_count: t.interval_count,
-      benefits: benefits.length ? benefits : [''], is_active: !!t.is_active, sort_order: t.sort_order,
+      benefits: features.length ? features : [''], benefitsMeta, is_active: !!t.is_active, sort_order: t.sort_order,
     });
     setFormError('');
     setShow(true);
@@ -64,7 +67,7 @@ export default function MembershipTiersList() {
     const payload = {
       name: form.name, slug: form.slug || undefined, description: form.description || null,
       price: Number(form.price), interval_unit: form.interval_unit, interval_count: Number(form.interval_count || 1),
-      benefits: form.benefits.filter((b) => b.trim()),
+      benefits: { ...form.benefitsMeta, features: form.benefits.filter((b) => b.trim()) },
       is_active: !!form.is_active, sort_order: Number(form.sort_order || 0),
     };
     try {
@@ -93,17 +96,13 @@ export default function MembershipTiersList() {
     const a = rows[index], b = rows[target];
     try {
       await Promise.all([
-        api.put(`/membership/admin/tiers/${a.id}`, { ...a, benefits: parseBenefits(a.benefits_json), is_active: !!a.is_active, sort_order: b.sort_order }),
-        api.put(`/membership/admin/tiers/${b.id}`, { ...b, benefits: parseBenefits(b.benefits_json), is_active: !!b.is_active, sort_order: a.sort_order }),
+        api.put(`/membership/admin/tiers/${a.id}`, { ...a, benefits: parseTierBenefits(a.benefits_json), is_active: !!a.is_active, sort_order: b.sort_order }),
+        api.put(`/membership/admin/tiers/${b.id}`, { ...b, benefits: parseTierBenefits(b.benefits_json), is_active: !!b.is_active, sort_order: a.sort_order }),
       ]);
       load();
     } catch (e) {
       toast(parseApiError(e), 'error');
     }
-  }
-
-  function parseBenefits(benefitsJson) {
-    try { return typeof benefitsJson === 'string' ? JSON.parse(benefitsJson) : (benefitsJson || []); } catch { return []; }
   }
 
   return (
