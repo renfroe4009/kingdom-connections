@@ -29,6 +29,7 @@ import api from '../../api/client.js';
 import { FieldGroup, NumberField, TextField, TextareaField, ToggleField } from '../fields/index.jsx';
 import { IDENTITY_DEFAULTS, cx, useDomIdentity, useNodeRef } from './nodeUtils.js';
 import { sanitizeHtml } from '../../utils/sanitizeHtml.js';
+import { parseTierBenefits } from '../../utils/tierBenefits.js';
 
 function formatPrice(price) {
   return `$${(Number(price) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -76,10 +77,10 @@ export default function MembershipBlock({ heading, blurb, footnoteText, skip, li
       ) : (
         // `founding-grid` when the tiers carry artwork — the design lays those
         // photo cards out on their own grid, with room for the image above.
-        <div className={cx('join-grid', visibleTiers.some((t) => (t.benefits_json || {}).image) && 'founding-grid')}>
+        <div className={cx('join-grid', visibleTiers.some((t) => parseTierBenefits(t.benefits_json).image) && 'founding-grid')}>
           {visibleTiers.map((tier) => {
-            const benefits = tier.benefits_json || {};
-            const features = Array.isArray(benefits.features) ? benefits.features : [];
+            const benefits = parseTierBenefits(tier.benefits_json);
+            const { features } = benefits;
             const featured = Boolean(benefits.badge);
             const ctaLabel = benefits.cta || String(ctaTemplate || 'Select {name}').replace('{name}', tier.name);
             // The design gives every tier its own colour through a modifier
