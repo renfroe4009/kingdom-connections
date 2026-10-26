@@ -18,6 +18,16 @@ export function parseServerDate(dateStr) {
   return new Date(dateStr.replace(' ', 'T') + 'Z');
 }
 
+// DATE columns (no time part) come back as a plain "YYYY-MM-DD". Parsed with
+// new Date() that is UTC midnight, which shows as the previous day anywhere
+// west of UTC — so format the calendar date itself instead.
+export function formatDateOnly(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = String(dateStr).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return String(dateStr);
+  return new Date(y, m - 1, d).toLocaleDateString();
+}
+
 export function relativeTime(dateStr) {
   const d = parseServerDate(dateStr);
   if (!d) return '';

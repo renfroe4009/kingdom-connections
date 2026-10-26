@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import api from '../../../api/client.js';
 import { parseTierBenefits } from '../../../utils/tierBenefits.js';
+import { wontRenew } from '../../../utils/membershipTerms.js';
+import { formatDateOnly } from '../../../utils/date.js';
+import { sanitizeHtml } from '../../../utils/sanitizeHtml.js';
 
 const STATUS_TONE = { active: 'success', paused: 'warning', canceled: 'secondary', completed: 'secondary' };
 
@@ -24,6 +27,7 @@ export default function PortalMembership() {
 
       {rows.map((m) => {
         const benefits = parseTierBenefits(m.benefits_json).features;
+        const oneTime = wontRenew(m);
         return (
           <div className="card mb-3" key={m.subscription_id}>
             <div className="card-body">
@@ -34,16 +38,22 @@ export default function PortalMembership() {
                 </div>
                 <div className="text-end">
                   <div className="fs-4 fw-bold">{fmt(m.price)}</div>
-                  <div className="text-muted small">per {m.interval_count > 1 ? `${m.interval_count} ` : ''}{m.interval_unit}{m.interval_count > 1 ? 's' : ''}</div>
+                  <div className="text-muted small">
+                    {oneTime
+                      ? 'one-time gift'
+                      : `per ${m.interval_count > 1 ? `${m.interval_count} ` : ''}${m.interval_unit}${m.interval_count > 1 ? 's' : ''}`}
+                  </div>
                 </div>
               </div>
               {m.description && <p className="text-muted small mt-2 mb-2">{m.description}</p>}
               {m.status === 'active' && m.next_run_date && (
-                <div className="small text-muted mb-2">Renews on {new Date(m.next_run_date).toLocaleDateString()}</div>
+                <div className="small text-muted mb-2">
+                  {oneTime ? `Member until ${formatDateOnly(m.end_date)}` : `Renews on ${formatDateOnly(m.next_run_date)}`}
+                </div>
               )}
               {benefits.length > 0 && (
                 <ul className="small mb-0 ps-3">
-                  {benefits.map((b, i) => <li key={i}>{b}</li>)}
+                  {benefits.map((b, i) => <li key={i} dangerouslySetInnerHTML={{ __html: sanitizeHtml(b) }} />)}
                 </ul>
               )}
             </div>

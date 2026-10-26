@@ -7,6 +7,8 @@
 // vaults the card (mirrors vault.js's /save-card) and charges the first
 // cycle immediately, then billing-cron.js's attemptAutoCharge() carries
 // every renewal forward using that same stored token — no new gateway code.
+// Whether there are renewals at all (monthly) or just one paid year
+// (one-time) comes from services/membershipTerms.js.
 // =============================================================================
 const express = require('express');
 const crypto = require('crypto');
@@ -14,6 +16,7 @@ const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const { ensureConstituentTag, notifyMembershipEvent } = require('../services/constituents');
 const moduleSettings = require('../services/moduleSettings');
+const { membershipTerms } = require('../services/membershipTerms');
 
 const router = express.Router();
 
@@ -85,7 +88,7 @@ router.post('/public/signup-intent', async (req, res, next) => {
     const [ins] = await db.query(
       `INSERT INTO payment_intents (kind, surface, payload, expires_at)
        VALUES ('vault', 'membership', CAST(:payload AS JSON), DATE_ADD(NOW(), INTERVAL 30 MINUTE))`,
-      { payload: JSON.stringify({ tier_slug: body.tier_slug, donor }) }
+      { payload: JSON.stringify({ tier_slug: body.tier_slug, donor, frequency: membershipTerms(body.frequency).frequency }) }
     );
     res.json({ intentId: ins.insertId });
   } catch (err) { next(err); }
@@ -169,7 +172,9 @@ router.post('/public/signup', async (req, res, next) => {
     const vaultProfileId = vp.insertId;
 
     // ---- Charge the first cycle right now ----
-    const memo = `Membership — ${tier.name}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const terms = membershipTerms(body.frequency, today);
+    const memo = `Membership — ${tier.name} (${terms.label})`;
     const paymentToken = crypto.randomBytes(32).toString('hex');
     const invCfg = await moduleSettings.get('invoices');
     const pfx = (invCfg.invoice_prefix || 'INV').trim().toUpperCase();
@@ -181,7 +186,6 @@ router.post('/public/signup', async (req, res, next) => {
     const lastNum = numRows[0]?.invoice_number;
     const seq = lastNum ? Number(lastNum.split('-').pop()) + 1 : 1;
     const number = `${pfx}-${year}-${String(seq).padStart(6, '0')}`;
-    const today = new Date().toISOString().slice(0, 10);
 
     const [inv] = await db.query(
       `INSERT INTO invoices
@@ -244,19 +248,20 @@ router.post('/public/signup', async (req, res, next) => {
     }
     await refreshInvoiceTotalsById(invoiceId);
 
-    // ---- Create the subscription for every renewal after this one ----
-    const nextRun = await require('../jobs/billing-cron').addInterval(today, tier.interval_unit, tier.interval_count);
+    // ---- Create the subscription: monthly renewals, or the one-time year
+    // that billing-cron closes out at next_run_date (services/membershipTerms.js) ----
+    const nextRun = await require('../jobs/billing-cron').addInterval(today, terms.intervalUnit, terms.intervalCount);
     const [sub] = await db.query(
       `INSERT INTO subscriptions
-         (name, contact_id, currency, interval_unit, interval_count, start_date, next_run_date,
+         (name, contact_id, currency, interval_unit, interval_count, start_date, next_run_date, end_date,
           status, auto_charge, gateway, gateway_profile_id, vault_profile_id, membership_tier_id, owner_id)
        VALUES
-         (:name, :contact_id, 'USD', :interval_unit, :interval_count, :start_date, :next_run_date,
-          'active', 1, 'valor', :gateway_profile_id, :vault_profile_id, :membership_tier_id, NULL)`,
+         (:name, :contact_id, 'USD', :interval_unit, :interval_count, :start_date, :next_run_date, :end_date,
+          'active', :auto_charge, 'valor', :gateway_profile_id, :vault_profile_id, :membership_tier_id, NULL)`,
       {
-        name: memo, contact_id: contactId, interval_unit: tier.interval_unit, interval_count: tier.interval_count,
-        start_date: today, next_run_date: nextRun, gateway_profile_id: String(vaultProfileId),
-        vault_profile_id: vaultProfileId, membership_tier_id: tier.id,
+        name: memo, contact_id: contactId, interval_unit: terms.intervalUnit, interval_count: terms.intervalCount,
+        start_date: today, next_run_date: nextRun, end_date: terms.endDate, auto_charge: terms.autoCharge,
+        gateway_profile_id: String(vaultProfileId), vault_profile_id: vaultProfileId, membership_tier_id: tier.id,
       }
     );
     await db.query(
@@ -277,7 +282,7 @@ router.post('/public/signup', async (req, res, next) => {
 // =============================================================================
 const MEMBER_SELECT = `
   SELECT s.id AS subscription_id, s.name, s.status, s.next_run_date, s.start_date, s.end_date,
-         t.id AS tier_id, t.name AS tier_name, t.price, t.interval_unit, t.interval_count,
+         t.id AS tier_id, t.name AS tier_name, t.price, s.interval_unit, s.interval_count, s.auto_charge,
          c.id AS contact_id, CONCAT_WS(' ', c.first_name, c.last_name) AS contact_name, c.email AS contact_email,
          o.id AS organization_id, o.name AS organization_name
     FROM subscriptions s
@@ -305,19 +310,23 @@ router.get('/admin/summary', requireAuth, requirePermission('membership.read'), 
     const [[totals]] = await db.query(
       `SELECT COUNT(*) AS active_count FROM subscriptions WHERE membership_tier_id IS NOT NULL AND status = 'active'`
     );
+    // Normalize every member's billing to an annual figure from their own
+    // subscription's interval, so monthly members (12x the tier price) and
+    // yearly or one-time members (1x) can be summed together.
     const [byTier] = await db.query(
-      `SELECT t.name AS tier_name, t.price, COUNT(s.id) AS member_count
+      `SELECT t.name AS tier_name, t.price, COUNT(s.id) AS member_count,
+              COALESCE(SUM(t.price * CASE s.interval_unit
+                WHEN 'day'   THEN 365 / s.interval_count
+                WHEN 'week'  THEN 52 / s.interval_count
+                WHEN 'month' THEN 12 / s.interval_count
+                WHEN 'year'  THEN 1 / s.interval_count
+                ELSE 0 END), 0) AS annual_revenue
          FROM membership_tiers t
          LEFT JOIN subscriptions s ON s.membership_tier_id = t.id AND s.status = 'active'
         GROUP BY t.id, t.name, t.price
         ORDER BY t.sort_order, t.price`
     );
-    // Normalize every tier's recurring revenue to an annual figure so tiers on
-    // different billing intervals (monthly vs yearly) can be summed together.
-    const annualRevenue = byTier.reduce((acc, t) => {
-      const perYear = Number(t.price) * Number(t.member_count || 0) * 1; // price already per-cycle
-      return acc + perYear;
-    }, 0);
+    const annualRevenue = byTier.reduce((acc, t) => acc + Number(t.annual_revenue || 0), 0);
     res.json({ totals, byTier, annualRevenue });
   } catch (err) { next(err); }
 });

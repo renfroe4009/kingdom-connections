@@ -8,14 +8,13 @@
 //     (skip/limit-sliced exactly like MembershipBlock — same convention,
 //     same reason: membership_tiers has no category column, so sort_order
 //     ranges stand in for "Supporting" vs "Founding" vs "Partner"). A tier's
-//     price is fixed and its own interval_unit/interval_count already is
-//     its renewal cadence (e.g. Emerald renews every 3 years) — there's no
-//     "pick monthly or one-time" choice for a tier, so the frequency
-//     toggle, custom-amount field, and fee-cover option are all hidden for
-//     these tabs, and the payment step always runs the real membership
-//     signup (MembershipCheckout -> /api/membership/public/signup), which
-//     creates the actual tier-linked subscription Admin -> Membership
-//     reports on.
+//     price is fixed, so the custom-amount field and fee-cover option are
+//     hidden for these tabs, but the one-time/monthly toggle stays: one-time
+//     buys a year of membership, monthly bills the tier price every month
+//     until cancelled (server/src/services/membershipTerms.js). The payment
+//     step always runs the real membership signup (MembershipCheckout ->
+//     /api/membership/public/signup), which creates the actual tier-linked
+//     subscription Admin -> Membership reports on.
 //   - 'donation': behaves exactly like DonationBlock's own flow (its own
 //     configurable amount list, real one-time/monthly choice, optional fee
 //     cover) — for general giving that isn't tied to a membership tier.
@@ -184,7 +183,7 @@ export default function GiveWidgetBlock({
 
     if (isMembership) {
       if (!tierSlug) return setError('Choose a membership level.');
-      setMembershipSignup({ tierSlug, donor });
+      setMembershipSignup({ tierSlug, donor, frequency });
       return;
     }
     if (frequency === 'monthly') {
@@ -299,18 +298,16 @@ export default function GiveWidgetBlock({
               {stepHeading && <h2>{stepHeading}</h2>}
               {stepLead && <p className="donate-lead">{stepLead}</p>}
 
-              {!isMembership && (
-                <div className="freq-toggle">
-                  <label>
-                    <input type="radio" name={`${domId}-freq`} checked={frequency === 'once'} onChange={() => setFrequency('once')} />
-                    One-time
-                  </label>
-                  <label>
-                    <input type="radio" name={`${domId}-freq`} checked={frequency === 'monthly'} onChange={() => setFrequency('monthly')} />
-                    Monthly
-                  </label>
-                </div>
-              )}
+              <div className="freq-toggle">
+                <label>
+                  <input type="radio" name={`${domId}-freq`} checked={frequency === 'once'} onChange={() => setFrequency('once')} />
+                  One-time
+                </label>
+                <label>
+                  <input type="radio" name={`${domId}-freq`} checked={frequency === 'monthly'} onChange={() => setFrequency('monthly')} />
+                  Monthly
+                </label>
+              </div>
 
               {!tiersLoaded && isMembership ? (
                 <div className="bx-editor-note">Loading membership tiers…</div>
@@ -358,7 +355,9 @@ export default function GiveWidgetBlock({
               <h2>Your details</h2>
               <p className="donate-lead">
                 {isMembership
-                  ? money(effectiveAmount)
+                  ? (frequency === 'monthly'
+                    ? `${money(effectiveAmount)} every month, until you cancel`
+                    : `${money(effectiveAmount)} one-time — 1 year of membership`)
                   : (frequency === 'monthly' ? `${money(effectiveAmount)} every month` : money(effectiveAmount))}
                 {!isMembership && coverFees && feeAmount > 0 && frequency === 'once' ? ` + ${money(feeAmount)} fees` : ''}
               </p>

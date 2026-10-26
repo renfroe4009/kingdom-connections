@@ -947,15 +947,18 @@ async function chargeVaultAchAndCreateSubscription({
   const nextRun = addInterval(today, intervalUnit, intervalCount);
   const [sub] = await db.query(
     `INSERT INTO subscriptions
-       (name, contact_id, currency, interval_unit, interval_count, start_date, next_run_date,
+       (name, contact_id, currency, interval_unit, interval_count, start_date, next_run_date, end_date,
         status, auto_charge, gateway, gateway_profile_id, vault_profile_id, fund_id, membership_tier_id, owner_id)
      VALUES
-       (:name, :contact_id, 'USD', :interval_unit, :interval_count, :start_date, :next_run_date,
-        'active', 1, 'valor', :gateway_profile_id, :vault_profile_id, :fund_id, :membership_tier_id, NULL)`,
+       (:name, :contact_id, 'USD', :interval_unit, :interval_count, :start_date, :next_run_date, :end_date,
+        'active', :auto_charge, 'valor', :gateway_profile_id, :vault_profile_id, :fund_id, :membership_tier_id, NULL)`,
     {
       name: memo, contact_id: contactId, interval_unit: intervalUnit, interval_count: intervalCount,
       start_date: today, next_run_date: nextRun, gateway_profile_id: String(vaultProfileId), vault_profile_id: vaultProfileId,
       fund_id: extraSubscriptionFields?.fund_id || null, membership_tier_id: extraSubscriptionFields?.membership_tier_id || null,
+      // Only a one-time membership sets these (services/membershipTerms.js);
+      // every other caller keeps an open-ended, auto-charging subscription.
+      end_date: extraSubscriptionFields?.end_date || null, auto_charge: extraSubscriptionFields?.auto_charge ?? 1,
     }
   );
   await db.query(
@@ -983,11 +986,13 @@ async function completeMembershipACH({ cfg, d, achFields }) {
   });
 
   const amount = Number(tier.price);
-  const memo = `Membership — ${tier.name}`;
+  const { membershipTerms } = require('../services/membershipTerms');
+  const terms = membershipTerms(d.frequency, new Date().toISOString().slice(0, 10));
+  const memo = `Membership — ${tier.name} (${terms.label})`;
   const result = await chargeVaultAchAndCreateSubscription({
     cfg, contactId, vaultId, achProfileId, vaultProfileId, amount, memo, achTxnType: achFields.ach_txn_type, email: donor.email,
-    intervalUnit: tier.interval_unit, intervalCount: tier.interval_count,
-    extraSubscriptionFields: { membership_tier_id: tier.id },
+    intervalUnit: terms.intervalUnit, intervalCount: terms.intervalCount,
+    extraSubscriptionFields: { membership_tier_id: tier.id, end_date: terms.endDate, auto_charge: terms.autoCharge },
   });
   if (!result.ok) return result;
 

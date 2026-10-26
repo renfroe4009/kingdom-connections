@@ -11,7 +11,8 @@
 // subscription) before relaying the result back here.
 //
 // Props:
-//   signup     { tierSlug, donor }
+//   signup     { tierSlug, donor, frequency }  — frequency 'once' | 'monthly'
+//              (server/src/services/membershipTerms.js decides what each bills)
 //   onSuccess  fn(result)
 //   onError    fn(message)
 //   onCancel   fn()
@@ -36,7 +37,7 @@ export default function MembershipCheckout({ signup, onSuccess, onError, onCance
     let cancelled = false;
     Promise.all([
       api.get('/payments/public/client-token'),
-      api.post('/membership/public/signup-intent', { tier_slug: signup.tierSlug, donor: signup.donor }),
+      api.post('/membership/public/signup-intent', { tier_slug: signup.tierSlug, donor: signup.donor, frequency: signup.frequency }),
     ])
       .then(([tokenRes, intentRes]) => {
         if (cancelled) return;
@@ -69,6 +70,7 @@ export default function MembershipCheckout({ signup, onSuccess, onError, onCance
           const { data } = await api.post('/membership/public/signup', {
             tier_slug: signup.tierSlug,
             donor: signup.donor,
+            frequency: signup.frequency,
             card_token: msg.card_token,
             cardholder_name: msg.cardholder_name || null,
             last4: msg.last4 || null,

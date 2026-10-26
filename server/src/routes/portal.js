@@ -15,6 +15,7 @@ const { sendMail } = require('../services/mailer');
 const { renderBySlug } = require('../services/templates');
 const { tagInvoicePaymentAsDonation } = require('../services/constituents');
 const { maybeSendReceiptEmail } = require('../services/receipts');
+const { wontRenewSql } = require('../services/membershipTerms');
 const { passwordSchema, hashPassword, isPasswordBreached, BCRYPT_COST } = require('../services/passwordPolicy');
 
 // Require the user to be in the 'portal' role (in addition to an admin bypass)
@@ -484,8 +485,9 @@ router.get('/membership', async (req, res, next) => {
     if (scope.organization_id) { conds.push('s.organization_id = :oid'); params.oid = scope.organization_id; }
     if (!conds.length) return res.json({ rows: [] });
     const [rows] = await db.query(
-      `SELECT s.id AS subscription_id, s.status, s.next_run_date, s.start_date,
-              t.name AS tier_name, t.description, t.price, t.interval_unit, t.interval_count, t.benefits_json
+      `SELECT s.id AS subscription_id, s.status, s.next_run_date, s.start_date, s.end_date, s.auto_charge,
+              s.interval_unit, s.interval_count,
+              t.name AS tier_name, t.description, t.price, t.benefits_json
          FROM subscriptions s
          JOIN membership_tiers t ON t.id = s.membership_tier_id
         WHERE (${conds.join(' OR ')})
@@ -561,6 +563,8 @@ router.get('/subscriptions', async (req, res, next) => {
     if (!conds.length) return res.json({ rows: [] });
     // Per-run total + payment count are computed in SQL so the portal list
     // can render an "Amount" column and a transactions badge in one round-trip.
+    // A one-time membership isn't a recurring plan, so it's left off this list
+    // (it shows on My Membership instead).
     const [rows] = await db.query(
       `SELECT s.id, s.name, s.currency, s.interval_unit, s.interval_count,
               s.next_run_date, s.status,
@@ -587,7 +591,8 @@ router.get('/subscriptions', async (req, res, next) => {
             WHERE i.subscription_id IS NOT NULL
             GROUP BY i.subscription_id
          ) pay ON pay.subscription_id = s.id
-        WHERE ${conds.join(' OR ')}
+        WHERE (${conds.join(' OR ')})
+          AND NOT ${wontRenewSql('s')}
         ORDER BY s.next_run_date`, params);
     res.json({ rows });
   } catch (err) { next(err); }
@@ -637,12 +642,17 @@ router.put('/subscriptions/:id/status', async (req, res, next) => {
     const scope = await getScope(req.user);
     const status = z.enum(['active', 'paused', 'canceled']).parse(req.body?.status);
     const [[sub]] = await db.query(
-      `SELECT id, status FROM subscriptions WHERE id = :id AND (contact_id = :cid OR organization_id = :oid)`,
+      `SELECT id, status, end_date, next_run_date FROM subscriptions WHERE id = :id AND (contact_id = :cid OR organization_id = :oid)`,
       { id: req.params.id, cid: scope.contact_id, oid: scope.organization_id }
     );
     if (!sub) return res.status(404).json({ error: 'Not found' });
     if (sub.status === 'canceled') return res.status(409).json({ error: 'This plan is already canceled.' });
     if (sub.status === 'completed') return res.status(409).json({ error: 'This plan has already run its course.' });
+    // A one-time membership never bills again (services/membershipTerms.js) —
+    // canceling it would only end the year the donor already paid for.
+    if (sub.end_date && sub.next_run_date > sub.end_date) {
+      return res.status(409).json({ error: "This plan doesn't renew, so there's nothing to pause or cancel." });
+    }
     await db.query('UPDATE subscriptions SET status = :s WHERE id = :id', { s: status, id: sub.id });
     res.json({ ok: true, status });
   } catch (err) { next(err); }
