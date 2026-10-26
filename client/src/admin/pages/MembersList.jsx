@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/client.js';
 import PageHeader from '../../components/PageHeader.jsx';
+import { isOneTimeMembership } from '../../utils/membershipTerms.js';
 
 const STATUS_TONE = { active: 'success', paused: 'warning', canceled: 'secondary', completed: 'secondary' };
 
@@ -103,9 +104,9 @@ export default function MembersList() {
                         : (m.organization_name || '—')}
                     </td>
                     <td>{m.tier_name}</td>
-                    <td className="text-end fw-semibold">{fmtMoney(m.price)} / {m.interval_unit}</td>
+                    <td className="text-end fw-semibold">{fmtMoney(m.price)} {isOneTimeMembership(m) ? 'one-time' : `/ ${m.interval_unit}`}</td>
                     <td><span className={`badge bg-${STATUS_TONE[m.status] || 'secondary'}-subtle text-${STATUS_TONE[m.status] || 'secondary'}`}>{m.status}</span></td>
-                    <td>{m.next_run_date ? new Date(m.next_run_date).toLocaleDateString() : '—'}</td>
+                    <td>{m.next_run_date ? `${isOneTimeMembership(m) ? 'Ends ' : ''}${new Date(m.next_run_date).toLocaleDateString()}` : '—'}</td>
                   </tr>
                 ))}
                 {rows.length === 0 && <tr><td colSpan="5"><div className="empty-state">No members yet.</div></td></tr>}

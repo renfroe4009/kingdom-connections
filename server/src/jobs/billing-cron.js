@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { db } = require('../db');
 const { logActivity } = require('../services/activity');
 const { sendMail } = require('../services/mailer');
+const { isEndedOneTimeMembership } = require('../services/membershipTerms');
 
 function roundMoney(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
@@ -40,6 +41,16 @@ async function runSubscription(subId) {
   const [[sub]] = await db.query('SELECT * FROM subscriptions WHERE id = :id', { id: subId });
   if (!sub) return { ok: false, error: 'Not found' };
   if (sub.status !== 'active') return { ok: false, skipped: true, status: sub.status };
+
+  // A one-time membership's paid year is over — close it rather than invoice
+  // a renewal the member never signed up for (services/membershipTerms.js).
+  if (isEndedOneTimeMembership(sub)) {
+    await db.query(`UPDATE subscriptions SET status = 'completed' WHERE id = :id`, { id: subId });
+    await logActivity({
+      entityType: 'subscription', entityId: sub.id,
+      action: 'completed', description: 'One-time membership year ended — not renewed' });
+    return { ok: false, skipped: true, status: 'completed' };
+  }
 
   const [items] = await db.query(
     'SELECT * FROM subscription_items WHERE subscription_id = :id ORDER BY sort_order, id', { id: subId });
@@ -655,7 +666,8 @@ async function runDueRecurringInvoices() {
 // Fires 'membership.renewal_upcoming' once per membership per renewal cycle,
 // REMINDER_DAYS before it auto-charges. Dedup is via the activities table
 // (no new table needed) — without it, an hourly cron would re-fire the same
-// reminder ~24x on the one calendar day the DATEDIFF matches.
+// reminder ~24x on the one calendar day the DATEDIFF matches. A one-time
+// membership never renews, so it is left out (services/membershipTerms.js).
 const MEMBERSHIP_REMINDER_DAYS = 7;
 async function checkMembershipRenewals() {
   const [dueSoon] = await db.query(
@@ -663,6 +675,7 @@ async function checkMembershipRenewals() {
        FROM subscriptions s
        JOIN membership_tiers t ON t.id = s.membership_tier_id
       WHERE s.status = 'active'
+        AND NOT (s.auto_charge = 0 AND s.end_date IS NOT NULL AND s.next_run_date > s.end_date)
         AND DATEDIFF(s.next_run_date, CURDATE()) = :days`,
     { days: MEMBERSHIP_REMINDER_DAYS }
   );

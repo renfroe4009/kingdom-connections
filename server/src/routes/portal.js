@@ -484,8 +484,9 @@ router.get('/membership', async (req, res, next) => {
     if (scope.organization_id) { conds.push('s.organization_id = :oid'); params.oid = scope.organization_id; }
     if (!conds.length) return res.json({ rows: [] });
     const [rows] = await db.query(
-      `SELECT s.id AS subscription_id, s.status, s.next_run_date, s.start_date,
-              t.name AS tier_name, t.description, t.price, t.interval_unit, t.interval_count, t.benefits_json
+      `SELECT s.id AS subscription_id, s.status, s.next_run_date, s.start_date, s.end_date, s.auto_charge,
+              s.interval_unit, s.interval_count,
+              t.name AS tier_name, t.description, t.price, t.benefits_json
          FROM subscriptions s
          JOIN membership_tiers t ON t.id = s.membership_tier_id
         WHERE (${conds.join(' OR ')})
