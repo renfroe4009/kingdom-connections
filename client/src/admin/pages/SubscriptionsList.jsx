@@ -7,6 +7,7 @@ import FormErrorBanner from '../../components/FormErrorBanner.jsx';
 import SavedPaymentMethods from '../components/SavedPaymentMethods.jsx';
 import { parseApiError } from '../../utils/apiError.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { isOneTimeMembership, wontRenew } from '../../utils/membershipTerms.js';
 
 const STATUS_TONE = {
   active: 'success', paused: 'warning', canceled: 'danger', completed: 'secondary',
@@ -140,7 +141,7 @@ export default function SubscriptionsList() {
                       <Link to={`/admin/subscriptions/${s.id}`} className="fw-semibold text-decoration-none">{s.name}</Link>
                     </td>
                     <td>{s.contact_name || s.organization_name || '—'}</td>
-                    <td>Every {s.interval_count} {s.interval_unit}{s.interval_count > 1 ? 's' : ''}</td>
+                    <td>{isOneTimeMembership(s) ? 'One-time membership' : `Every ${s.interval_count} ${s.interval_unit}${s.interval_count > 1 ? 's' : ''}`}</td>
                     <td className="text-end fw-semibold">
                       {fmtMoney(s.per_run_total)}
                       <div className="text-muted small fw-normal">{s.currency || 'USD'}</div>
@@ -151,7 +152,7 @@ export default function SubscriptionsList() {
                         <div className="text-success small">{fmtMoney(s.captured_total)} captured</div>
                       )}
                     </td>
-                    <td>{s.next_run_date || '—'}</td>
+                    <td>{wontRenew(s) ? `Ends ${s.end_date}` : (s.next_run_date || '—')}</td>
                     <td><span className={`badge bg-${STATUS_TONE[s.status]}-subtle text-${STATUS_TONE[s.status]}`}>{s.status}</span></td>
                     <td className="text-end">
                       <Link to={`/admin/subscriptions/${s.id}`} className="btn btn-sm btn-light">

@@ -10,6 +10,7 @@ import { parseApiError } from '../../utils/apiError.js';
 import { formatGateway } from '../../utils/gateway.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { isOneTimeMembership, wontRenew } from '../../utils/membershipTerms.js';
 
 const STATUS_TONE = {
   active: 'success', paused: 'warning', canceled: 'danger', completed: 'secondary',
@@ -105,7 +106,11 @@ export default function SubscriptionDetail() {
     setRunning(true); setMsg('');
     try {
       const r = await api.post(`/subscriptions/${id}/run-now`);
-      setMsg(`Invoice ${r.data.invoice_number || `#${r.data.invoice_id}`} generated.`);
+      // runSubscription answers 200 with ok:false when it didn't bill — e.g. a
+      // one-time membership mid-year ("Nothing to bill — this plan ends …").
+      setMsg(r.data.ok
+        ? `Invoice ${r.data.invoice_number || `#${r.data.invoiceId}`} generated.`
+        : (r.data.reason || r.data.error || `Nothing was billed — this plan is ${r.data.status}.`));
       load();
     } catch (e) {
       setMsg(parseApiError(e, 'Run failed.'));
@@ -126,7 +131,9 @@ export default function SubscriptionDetail() {
       <PageHeader
         title={sub.name}
         subtitle={<span>
-          Every {sub.interval_count} {sub.interval_unit}(s) · Next run {sub.next_run_date || '—'}
+          {wontRenew(sub)
+            ? `${isOneTimeMembership(sub) ? 'One-time membership' : `Every ${sub.interval_count} ${sub.interval_unit}(s)`} · Ends ${sub.end_date}`
+            : `Every ${sub.interval_count} ${sub.interval_unit}(s) · Next run ${sub.next_run_date || '—'}`}
           <span className={`badge bg-${STATUS_TONE[sub.status]}-subtle text-${STATUS_TONE[sub.status]} ms-2`}>{sub.status}</span>
         </span>}
         actions={<>
