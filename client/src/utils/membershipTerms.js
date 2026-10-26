@@ -1,9 +1,8 @@
 // =============================================================================
-// A one-time membership (server/src/services/membershipTerms.js) is a
-// subscriptions row with auto_charge off and end_date at its start date, so
-// its next_run_date is when the paid year ends rather than a renewal date.
+// A plan that won't bill again: its next cycle starts after its end_date
+// (server/src/services/membershipTerms.js). That's every one-time
+// membership, whose end_date is the last day of its paid year.
 // =============================================================================
-export function isOneTimeMembership(sub) {
-  return !Number(sub?.auto_charge) && Boolean(sub?.end_date)
-    && String(sub.next_run_date).slice(0, 10) > String(sub.end_date).slice(0, 10);
+export function wontRenew(sub) {
+  return Boolean(sub?.end_date) && String(sub.next_run_date).slice(0, 10) > String(sub.end_date).slice(0, 10);
 }

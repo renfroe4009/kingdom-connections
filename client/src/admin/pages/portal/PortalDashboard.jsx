@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../../api/client.js';
+import { wontRenew } from '../../../utils/membershipTerms.js';
+import { formatDateOnly } from '../../../utils/date.js';
 
 export default function PortalDashboard() {
   const [me, setMe] = useState(null);
@@ -57,7 +59,9 @@ export default function PortalDashboard() {
                 <>
                   <div className="fs-2 fw-bolder">{activeMembership.tier_name}</div>
                   <div className="small text-muted">
-                    {activeMembership.next_run_date ? `Renews ${activeMembership.next_run_date}` : 'Active'}
+                    {wontRenew(activeMembership)
+                      ? `Member until ${formatDateOnly(activeMembership.end_date)}`
+                      : (activeMembership.next_run_date ? `Renews ${formatDateOnly(activeMembership.next_run_date)}` : 'Active')}
                   </div>
                 </>
               ) : (

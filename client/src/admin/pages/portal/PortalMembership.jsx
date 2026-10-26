@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import api from '../../../api/client.js';
 import { parseTierBenefits } from '../../../utils/tierBenefits.js';
-import { isOneTimeMembership } from '../../../utils/membershipTerms.js';
+import { wontRenew } from '../../../utils/membershipTerms.js';
+import { formatDateOnly } from '../../../utils/date.js';
 import { sanitizeHtml } from '../../../utils/sanitizeHtml.js';
 
 const STATUS_TONE = { active: 'success', paused: 'warning', canceled: 'secondary', completed: 'secondary' };
@@ -26,7 +27,7 @@ export default function PortalMembership() {
 
       {rows.map((m) => {
         const benefits = parseTierBenefits(m.benefits_json).features;
-        const oneTime = isOneTimeMembership(m);
+        const oneTime = wontRenew(m);
         return (
           <div className="card mb-3" key={m.subscription_id}>
             <div className="card-body">
@@ -47,7 +48,7 @@ export default function PortalMembership() {
               {m.description && <p className="text-muted small mt-2 mb-2">{m.description}</p>}
               {m.status === 'active' && m.next_run_date && (
                 <div className="small text-muted mb-2">
-                  {oneTime ? 'Member until' : 'Renews on'} {new Date(m.next_run_date).toLocaleDateString()}
+                  {oneTime ? `Member until ${formatDateOnly(m.end_date)}` : `Renews on ${formatDateOnly(m.next_run_date)}`}
                 </div>
               )}
               {benefits.length > 0 && (

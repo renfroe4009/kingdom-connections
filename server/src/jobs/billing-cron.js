@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const { db } = require('../db');
 const { logActivity } = require('../services/activity');
 const { sendMail } = require('../services/mailer');
-const { isEndedOneTimeMembership } = require('../services/membershipTerms');
+const { wontRenewSql } = require('../services/membershipTerms');
 
 function roundMoney(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
@@ -42,13 +42,19 @@ async function runSubscription(subId) {
   if (!sub) return { ok: false, error: 'Not found' };
   if (sub.status !== 'active') return { ok: false, skipped: true, status: sub.status };
 
-  // A one-time membership's paid year is over — close it rather than invoice
-  // a renewal the member never signed up for (services/membershipTerms.js).
-  if (isEndedOneTimeMembership(sub)) {
+  // Never bill a cycle that starts after the plan's end_date. A one-time
+  // membership (services/membershipTerms.js) is created in exactly that
+  // state; any other plan only gets there if its end date was moved before
+  // its next run. Once that next run date arrives the plan is over; before it
+  // (say, 'Run now' mid-year) there is simply nothing to bill yet.
+  if (sub.end_date && sub.next_run_date > sub.end_date) {
+    if (sub.next_run_date > todayStr()) {
+      return { ok: false, skipped: true, status: sub.status, reason: `Nothing to bill — this plan ends ${sub.end_date}` };
+    }
     await db.query(`UPDATE subscriptions SET status = 'completed' WHERE id = :id`, { id: subId });
     await logActivity({
       entityType: 'subscription', entityId: sub.id,
-      action: 'completed', description: 'One-time membership year ended — not renewed' });
+      action: 'completed', description: `Ended ${sub.end_date} — no further billing` });
     return { ok: false, skipped: true, status: 'completed' };
   }
 
@@ -666,8 +672,9 @@ async function runDueRecurringInvoices() {
 // Fires 'membership.renewal_upcoming' once per membership per renewal cycle,
 // REMINDER_DAYS before it auto-charges. Dedup is via the activities table
 // (no new table needed) — without it, an hourly cron would re-fire the same
-// reminder ~24x on the one calendar day the DATEDIFF matches. A one-time
-// membership never renews, so it is left out (services/membershipTerms.js).
+// reminder ~24x on the one calendar day the DATEDIFF matches. A plan that
+// won't bill again — a one-time membership, see services/membershipTerms.js
+// — gets no "renews automatically" reminder.
 const MEMBERSHIP_REMINDER_DAYS = 7;
 async function checkMembershipRenewals() {
   const [dueSoon] = await db.query(
@@ -675,7 +682,7 @@ async function checkMembershipRenewals() {
        FROM subscriptions s
        JOIN membership_tiers t ON t.id = s.membership_tier_id
       WHERE s.status = 'active'
-        AND NOT (s.auto_charge = 0 AND s.end_date IS NOT NULL AND s.next_run_date > s.end_date)
+        AND NOT ${wontRenewSql('s')}
         AND DATEDIFF(s.next_run_date, CURDATE()) = :days`,
     { days: MEMBERSHIP_REMINDER_DAYS }
   );

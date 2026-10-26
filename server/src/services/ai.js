@@ -7,6 +7,7 @@ const { db }    = require('../db');
 const { sanitizeHtml } = require('./sanitizeHtml');
 const { resolveOwnerScope, ownerClause, contactOwnerClause, taskClause } = require('./scope');
 const { logActivity } = require('./activity');
+const { wontRenewSql } = require('./membershipTerms');
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS    = 2048;
@@ -593,6 +594,7 @@ async function executeTool(name, input, user) {
                  GROUP BY subscription_id
                ) si ON si.subscription_id = s.id
          WHERE s.status = 'active'
+           AND NOT ${wontRenewSql('s')}
            ${scopeClause ? `AND ${scopeClause}` : ''}
       `);
       return stats || { active_count: 0, estimated_mrr: 0 };

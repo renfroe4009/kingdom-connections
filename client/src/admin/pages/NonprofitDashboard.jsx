@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../api/client.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { parseServerDate } from '../../utils/date.js';
+import { wontRenew } from '../../utils/membershipTerms.js';
 
 function KpiCard({ icon, tint, label, value, sub }) {
   return (
@@ -72,7 +73,8 @@ export default function NonprofitDashboard() {
 
   const fmtMoney = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
 
-  const activeSubs = subscriptions.filter((s) => s.status === 'active');
+  // A one-time membership is active but never bills again — not recurring giving.
+  const activeSubs = subscriptions.filter((s) => s.status === 'active' && !wontRenew(s));
   const monthlyRecurringTotal = activeSubs.reduce((sum, s) => sum + monthlyEquivalent(s), 0);
 
   const openPledges = pledges.filter((p) => p.status !== 'completed' && p.status !== 'canceled');

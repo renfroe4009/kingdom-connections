@@ -310,19 +310,23 @@ router.get('/admin/summary', requireAuth, requirePermission('membership.read'), 
     const [[totals]] = await db.query(
       `SELECT COUNT(*) AS active_count FROM subscriptions WHERE membership_tier_id IS NOT NULL AND status = 'active'`
     );
+    // Normalize every member's billing to an annual figure from their own
+    // subscription's interval, so monthly members (12x the tier price) and
+    // yearly or one-time members (1x) can be summed together.
     const [byTier] = await db.query(
-      `SELECT t.name AS tier_name, t.price, COUNT(s.id) AS member_count
+      `SELECT t.name AS tier_name, t.price, COUNT(s.id) AS member_count,
+              COALESCE(SUM(t.price * CASE s.interval_unit
+                WHEN 'day'   THEN 365 / s.interval_count
+                WHEN 'week'  THEN 52 / s.interval_count
+                WHEN 'month' THEN 12 / s.interval_count
+                WHEN 'year'  THEN 1 / s.interval_count
+                ELSE 0 END), 0) AS annual_revenue
          FROM membership_tiers t
          LEFT JOIN subscriptions s ON s.membership_tier_id = t.id AND s.status = 'active'
         GROUP BY t.id, t.name, t.price
         ORDER BY t.sort_order, t.price`
     );
-    // Normalize every tier's recurring revenue to an annual figure so tiers on
-    // different billing intervals (monthly vs yearly) can be summed together.
-    const annualRevenue = byTier.reduce((acc, t) => {
-      const perYear = Number(t.price) * Number(t.member_count || 0) * 1; // price already per-cycle
-      return acc + perYear;
-    }, 0);
+    const annualRevenue = byTier.reduce((acc, t) => acc + Number(t.annual_revenue || 0), 0);
     res.json({ totals, byTier, annualRevenue });
   } catch (err) { next(err); }
 });

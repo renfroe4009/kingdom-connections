@@ -19,6 +19,7 @@ import { useIntegrations } from '../context/IntegrationsContext.jsx';
 import { toast } from '../../components/Toast.jsx';
 import { parseApiError } from '../../utils/apiError.js';
 import { isBlank } from '../../utils/validation.js';
+import { wontRenew } from '../../utils/membershipTerms.js';
 import FormErrorBanner from '../../components/FormErrorBanner.jsx';
 
 function Req() {
@@ -402,7 +403,7 @@ export default function ContactDetail() {
                         <span className={`badge bg-${s.status === 'active' ? 'success' : s.status === 'paused' ? 'warning' : 'secondary'}-subtle text-${s.status === 'active' ? 'success' : s.status === 'paused' ? 'warning' : 'secondary'}`}>{s.status}</span>
                       </div>
                       <div className="text-muted">
-                        Next renewal {s.next_run_date || '—'} · {Number(s.payment_count) || 0} charge{Number(s.payment_count) === 1 ? '' : 's'} · ${Number(s.captured_total || 0).toFixed(2)} total
+                        {wontRenew(s) ? `Ends ${s.end_date}` : `Next renewal ${s.next_run_date || '—'}`} · {Number(s.payment_count) || 0} charge{Number(s.payment_count) === 1 ? '' : 's'} · ${Number(s.captured_total || 0).toFixed(2)} total
                       </div>
                     </li>
                   ))}
