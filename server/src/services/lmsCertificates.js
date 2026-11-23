@@ -58,6 +58,20 @@ async function issueCertificateIfComplete({ courseId, contactId }) {
       `INSERT INTO lms_certificates (course_id, contact_id, certificate_number) VALUES (:cid, :uid, :num)`,
       { cid: courseId, uid: contactId, num: number }
     );
+    // Fire-and-forget — a genuinely new certificate (not the idempotent
+    // early-return above) is the one moment worth telling anyone about.
+    (async () => {
+      const [[course]] = await db.query('SELECT title FROM lms_courses WHERE id = :id', { id: courseId });
+      const { notifyLmsEvent } = require('./constituents');
+      const { notifyLmsChange } = require('./ppWebhooks');
+      await notifyLmsEvent('certificate.issued', contactId, { courseName: course?.title });
+      await notifyLmsChange('certificate.issued', contactId, {
+        course_title: course?.title, certificate_number: number,
+      });
+    })().catch((e) => {
+      // eslint-disable-next-line no-console
+      console.error(`[lmsCertificates] certificate.issued notify failed for contact #${contactId}:`, e.message);
+    });
     return ins.insertId;
   } catch (e) {
     // Unique-key race (two completion events landing at once) — the row

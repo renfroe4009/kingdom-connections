@@ -185,6 +185,9 @@ KC pushes these events to the URL(s) registered for your client:
 | `member.created` | A new member is added to one of your enabled orgs |
 | `member.updated` | A member's record or app profile changes |
 | `member.app_data_deleted` | A delete-request (§5) completes |
+| `course.enrolled` | A member is granted access to an LMS course (paid signup or staff-added) |
+| `course.completed` | A member finishes every lesson in a course |
+| `certificate.issued` | A completion certificate is issued for a member (fires once per course, even if `course.completed` fires more than once due to a retry) |
 
 ### Payload shape
 
@@ -204,6 +207,26 @@ KC pushes these events to the URL(s) registered for your client:
 ```
 
 (`member.app_data_deleted` carries only `entity_type`, `id`, `organization_id` — no PII, since the point of the event is that the PII is gone.)
+
+The three LMS events above share a different payload shape — `entity_type: "lms_activity"`, keyed on `contact_id` rather than `id`:
+
+```json
+{
+  "event": "certificate.issued",
+  "data": {
+    "entity_type": "lms_activity",
+    "contact_id": 4501,
+    "organization_id": 12,
+    "first_name": "Jordan",
+    "last_name": "Lee",
+    "email": "jordan@example.com",
+    "course_title": "Foundations of Prayer",
+    "certificate_number": "CERT-2026-00042"
+  }
+}
+```
+
+`course.enrolled` carries `course_title` + `course_slug` (or `cohort_name` + `cohort_id` when a staff member added the member directly to a cohort rather than through a paid signup). `course.completed` carries `course_title` only. Treat idempotency here as `event` + `contact_id` + `course_title`/`certificate_number`, not `data.id` (there is no `id` field on this shape).
 
 ### Verifying the signature
 

@@ -118,4 +118,42 @@ async function notifyMemberChange(eventType, contact) {
   });
 }
 
-module.exports = { fireWebhookEvent, notifyMemberChange, deliverToEndpoint, signPayload, MAX_ATTEMPTS, BACKOFF_MINUTES };
+// Convenience wrapper for LMS lifecycle events (course enrollment, course
+// completion, certificate issuance) — same app_enabled gate as
+// notifyMemberChange, since a partner should only learn about a contact's
+// activity in an org it was explicitly granted visibility into. Takes a
+// contactId rather than a loaded contact row (unlike notifyMemberChange)
+// since every LMS call site has an id, not a hydrated contact object —
+// self-contained try/catch so callers can fire-and-forget without their own
+// error handling, same contract as services/constituents.js's notify* helpers.
+async function notifyLmsChange(eventType, contactId, lmsData = {}) {
+  if (!contactId) return;
+  try {
+    const [[contact]] = await db.query(
+      'SELECT id, organization_id, first_name, last_name, email FROM contacts WHERE id = :id',
+      { id: contactId }
+    );
+    if (!contact?.organization_id) return;
+    const [[org]] = await db.query(
+      'SELECT app_enabled FROM organizations WHERE id = :id', { id: contact.organization_id }
+    );
+    if (!org?.app_enabled) return;
+    await fireWebhookEvent(eventType, {
+      entity_type: 'lms_activity',
+      contact_id: contact.id,
+      organization_id: contact.organization_id,
+      first_name: contact.first_name,
+      last_name: contact.last_name,
+      email: contact.email,
+      ...lmsData,
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(`[ppWebhooks] ${eventType} notify failed for contact #${contactId}:`, e.message);
+  }
+}
+
+module.exports = {
+  fireWebhookEvent, notifyMemberChange, notifyLmsChange,
+  deliverToEndpoint, signPayload, MAX_ATTEMPTS, BACKOFF_MINUTES,
+};

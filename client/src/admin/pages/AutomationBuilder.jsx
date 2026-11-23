@@ -28,10 +28,13 @@ const TRIGGERS = [
   { type: 'pledge.installment_upcoming', label: 'Pledge Installment Upcoming', icon: 'solar:calendar-mark-line-duotone',    color: '#7c3aed' },
   { type: 'volunteer.compliance_expiring', label: 'Volunteer Compliance Expiring', icon: 'solar:shield-warning-line-duotone', color: '#7c3aed' },
   { type: 'course.released',   label: 'Course Access Granted', icon: 'solar:square-academic-cap-2-line-duotone', color: '#7c3aed' },
+  { type: 'course.enrolled',   label: 'Course Enrollment',     icon: 'solar:user-plus-rounded-line-duotone',     color: '#7c3aed' },
   { type: 'lesson.completed',  label: 'Lesson Completed',      icon: 'solar:check-circle-line-duotone',          color: '#7c3aed' },
   { type: 'course.completed',  label: 'Course Completed',      icon: 'solar:medal-star-line-duotone',            color: '#7c3aed' },
   { type: 'quiz.passed',       label: 'Quiz Passed',           icon: 'solar:diploma-verified-line-duotone',      color: '#7c3aed' },
   { type: 'quiz.failed',       label: 'Quiz Failed',           icon: 'solar:close-circle-line-duotone',          color: '#7c3aed' },
+  { type: 'assignment.graded', label: 'Assignment Graded',     icon: 'solar:clipboard-check-line-duotone',       color: '#7c3aed' },
+  { type: 'certificate.issued', label: 'Certificate Issued',   icon: 'solar:diploma-line-duotone',               color: '#7c3aed' },
 ];
 
 const ACTIONS = [

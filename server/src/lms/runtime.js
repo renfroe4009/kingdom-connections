@@ -55,6 +55,12 @@ const videoPort = {
 // event shape per vendor/kcc-lms/src/ports.ts's LmsEvent union — discriminant
 // is `kind`, userId is always a contacts.id string (never a 'staff:' marker;
 // only learner-facing actions emit these).
+//
+// course.completed also fans out to the Praying Planet signed webhook
+// (services/ppWebhooks.js) — the one vendor-emitted event a partner
+// integration plausibly cares about (enrollment and certificate issuance
+// aren't vendor events, so they're fired from their own app-level call
+// sites instead: routes/lmsCheckout.js, routes/lms.js, services/lmsCertificates.js).
 const notifierPort = {
   async notify(event) {
     try {
@@ -69,6 +75,10 @@ const notifierPort = {
         'quiz.failed':      { score: event.score },
       }[event.kind] || {};
       await notifyLmsEvent(event.kind, contactId, payload);
+      if (event.kind === 'course.completed') {
+        const { notifyLmsChange } = require('../services/ppWebhooks');
+        await notifyLmsChange('course.completed', contactId, { course_title: event.courseTitle });
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('[lms/runtime] notifier failed:', e.message);

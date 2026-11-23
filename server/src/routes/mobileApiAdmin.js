@@ -24,7 +24,10 @@ const {
 // can never actually do anything (or worse, looks granted but isn't checked
 // anywhere).
 const VALID_SCOPES = ['organizations:read', 'members:read', 'members:write', 'members:delete'];
-const VALID_EVENTS = ['member.created', 'member.updated', 'member.app_data_deleted'];
+const VALID_EVENTS = [
+  'member.created', 'member.updated', 'member.app_data_deleted',
+  'course.enrolled', 'course.completed', 'certificate.issued',
+];
 
 router.use(requireAuth, requirePermission('settings.manage'));
 

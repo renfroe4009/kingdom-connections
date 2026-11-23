@@ -514,6 +514,17 @@ router.post('/cohorts/:id/members', requirePermission('lms.write'), async (req, 
     const { lms } = await loadRuntime();
     await lms.addMember(context, req.params.id, String(contactId));
     await logActivity({ userId: req.user.id, entityType: 'lms_cohort', entityId: req.params.id, action: 'updated', description: `Enrolled contact ${contactId}` });
+
+    // Same enrollment notifications as a paid signup (routes/lmsCheckout.js) —
+    // a staff-manual add is still a real enrollment. Cohort name stands in
+    // for a specific course title here since a cohort can carry several
+    // courses and this endpoint grants cohort-wide access, not one course.
+    const [[cohort]] = await db.query('SELECT name FROM lms_cohorts WHERE id = :id', { id: req.params.id });
+    const { notifyLmsEvent } = require('../services/constituents');
+    const { notifyLmsChange } = require('../services/ppWebhooks');
+    await notifyLmsEvent('course.enrolled', contactId, { courseName: cohort?.name });
+    await notifyLmsChange('course.enrolled', contactId, { cohort_name: cohort?.name, cohort_id: req.params.id });
+
     res.json({ ok: true });
   } catch (err) { handleLmsError(err, res, next); }
 });
@@ -724,6 +735,14 @@ router.post('/submissions/:id/grade', requirePermission('lms.write'), async (req
         WHERE id = :id`,
       { score, feedback: feedback || null, uid: req.user.id, id: req.params.id }
     );
+
+    // Distinct from 'lesson.completed' below — this is the moment a staff
+    // member actually marked an assignment, which a lesson-completion
+    // workflow can't distinguish from a self-paced video/reading lesson.
+    // Internal automation only — not a Praying Planet event; grading is a
+    // staff/CRM-side detail, not something a partner mobile app needs.
+    const { notifyLmsEvent } = require('../services/constituents');
+    await notifyLmsEvent('assignment.graded', submission.contact_id, { score });
 
     const { lms, store } = await loadRuntime();
     const learnerContext = await contextFor(String(submission.contact_id), 'learner');
