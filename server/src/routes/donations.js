@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const { rateLimit } = require('express-rate-limit');
 const { db } = require('../db');
 const { requireAuth, tryAuth, requirePermission } = require('../middleware/auth');
+const { requirePortal } = require('./portal');
 const { getDefaultGateway } = require('../services/gateways');
 const moduleSettings = require('../services/moduleSettings');
 const { ensureConstituentTag, notifyDonationCaptured } = require('../services/constituents');
@@ -607,6 +608,164 @@ router.post('/public/recurring', async (req, res, next) => {
     await notifyDonationCaptured(contactId, { amount, fundName: fund?.name, isRecurring: true });
 
     // ---- Create the subscription for every cycle after this one ----
+    const nextRun = addInterval(today, intervalUnit, intervalCount);
+    const [sub] = await db.query(
+      `INSERT INTO subscriptions
+         (name, contact_id, currency, interval_unit, interval_count, start_date, next_run_date,
+          status, auto_charge, gateway, gateway_profile_id, vault_profile_id, fund_id, owner_id)
+       VALUES
+         (:name, :contact_id, 'USD', :interval_unit, :interval_count, :start_date, :next_run_date,
+          'active', 1, 'valor', :gateway_profile_id, :vault_profile_id, :fund_id, NULL)`,
+      {
+        name: memo, contact_id: contactId, interval_unit: intervalUnit, interval_count: intervalCount,
+        start_date: today, next_run_date: nextRun, gateway_profile_id: String(vaultProfileId),
+        vault_profile_id: vaultProfileId, fund_id: fund?.id || null,
+      }
+    );
+    await db.query(
+      `INSERT INTO subscription_items (subscription_id, description, quantity, unit_price, sort_order)
+       VALUES (:sid, :desc, 1, :amount, 0)`,
+      { sid: sub.insertId, desc: memo, amount }
+    );
+
+    res.status(201).json({ ok: true, subscriptionId: sub.insertId, donationId: donIns.insertId, receipt_token: receiptToken });
+  } catch (err) { next(err); }
+});
+
+// POST /api/donations/public/recurring-saved — same pipeline as
+// /public/recurring above, but for a logged-in portal donor paying with a
+// card they've already saved instead of tokenizing a new one. Portal auth
+// required specifically on this route (everything else here stays public)
+// since a saved card belongs to one contact and must only be charged by
+// that same contact.
+router.post('/public/recurring-saved', requireAuth, requirePortal, async (req, res, next) => {
+  try {
+    const {
+      getGateway, valorVaultCharge, mapValorVaultChargeResponse, computeProcessingFee,
+      resolveCardholderName,
+    } = require('../services/gateways');
+    const { refreshInvoiceTotalsById } = require('../routes/invoices');
+    const { addInterval } = require('../jobs/billing-cron');
+
+    if (!req.user.contact_id) return res.status(409).json({ error: 'Your account has no linked member record.' });
+    const contactId = req.user.contact_id;
+
+    const body = req.body || {};
+    const amount = Number(body.amount);
+    if (!amount || amount <= 0) return res.status(400).json({ error: 'Invalid donation amount' });
+    const vaultProfileId = Number(body.vault_profile_id);
+    if (!vaultProfileId) return res.status(400).json({ error: 'vault_profile_id is required' });
+
+    const [[profile]] = await db.query(
+      `SELECT * FROM vault_profiles WHERE id = :id AND contact_id = :cid AND deleted_at IS NULL`,
+      { id: vaultProfileId, cid: contactId }
+    );
+    if (!profile) return res.status(404).json({ error: 'Payment method not found' });
+    if (profile.gateway !== 'valor' || !profile.card_token) {
+      return res.status(400).json({ error: 'This payment method cannot be used for recurring giving.' });
+    }
+
+    const [[contact]] = await db.query('SELECT first_name, last_name, email FROM contacts WHERE id = :id', { id: contactId });
+    const donorEmail = contact?.email;
+    if (!donorEmail) return res.status(409).json({ error: 'Your account has no email on file.' });
+
+    const fundSlug = String(body.fund_slug || '').trim();
+    let fund = null;
+    if (fundSlug) {
+      const [[f]] = await db.query('SELECT id, name FROM funds WHERE slug = :slug AND is_active = 1', { slug: fundSlug });
+      if (!f) return res.status(400).json({ error: 'Unknown or inactive fund' });
+      fund = f;
+    }
+
+    const intervalUnit = ['day', 'week', 'month', 'year'].includes(body.interval_unit) ? body.interval_unit : 'month';
+    const intervalCount = Number(body.interval_count) > 0 ? Number(body.interval_count) : 1;
+
+    const cfg = await getGateway('valor', null);
+    if (!cfg) return res.status(400).json({ error: 'No active Valor gateway configured' });
+
+    const fee = !cfg.b2b_only ? computeProcessingFee({ cfg, baseAmount: amount }) : null;
+    const chargeAmount = Math.round((amount + (fee?.amount || 0)) * 100) / 100;
+
+    const donorFullName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
+    const cardholderName = resolveCardholderName(profile.cardholder_name, donorFullName);
+
+    const memo = fund ? `Recurring donation to ${fund.name}` : 'Recurring donation';
+    const paymentToken = crypto.randomBytes(32).toString('hex');
+    const number = await nextInvoiceNumber();
+    const today = new Date().toISOString().slice(0, 10);
+
+    const [inv] = await db.query(
+      `INSERT INTO invoices
+         (payment_token, invoice_number, contact_id, issue_date, due_date, currency,
+          subtotal, tax_rate, tax_amount, discount_rate, discount_amount, total,
+          amount_paid, balance_due, status, memo)
+       VALUES
+         (:payment_token, :invoice_number, :contact_id, :issue_date, :due_date, 'USD',
+          :subtotal, 0, 0, 0, 0, :total, 0, :total, 'sent', :memo)`,
+      { payment_token: paymentToken, invoice_number: number, contact_id: contactId, issue_date: today, due_date: today, subtotal: amount, total: chargeAmount, memo }
+    );
+    const invoiceId = inv.insertId;
+    await db.query(
+      `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, amount, sort_order)
+       VALUES (:invoice_id, :desc, 1, :amount, :amount, 0)`,
+      { invoice_id: invoiceId, desc: memo, amount }
+    );
+    if (fee?.amount > 0) {
+      await db.query(
+        `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, amount, sort_order)
+         VALUES (:invoice_id, :desc, 1, :amount, :amount, 1)`,
+        { invoice_id: invoiceId, desc: fee.label, amount: fee.amount }
+      );
+    }
+
+    let chargeJson;
+    try {
+      chargeJson = await valorVaultCharge(cfg, {
+        card_token: profile.card_token, amount: chargeAmount, invoicenumber: number,
+        cardholdername: cardholderName, email: donorEmail, surcharge_amount: fee?.amount || 0,
+      });
+    } catch (chargeErr) {
+      return res.status(402).json({ error: chargeErr.message || 'Card could not be charged' });
+    }
+    const mapped = mapValorVaultChargeResponse(chargeJson);
+    const captured = mapped?.status === 'captured';
+    const receiptToken = crypto.randomBytes(32).toString('hex');
+    const [pay] = await db.query(
+      `INSERT INTO payments
+         (invoice_id, gateway, method, amount, currency, status,
+          fee_amount, fee_label,
+          external_txn_id, external_auth_code, card_last4, card_brand, card_expiry, card_holder_name,
+          processor_message, processor_code, processor_response, received_at, receipt_token, vault_profile_id)
+       VALUES
+         (:iid, 'valor', 'card', :amount, 'USD', :status, :fee, :flab, :txnId, :auth, :last4, :brand, :exp, :holder,
+          :pmsg, :pcode, CAST(:raw AS JSON), NOW(), :rtok, :vaultProfileId)`,
+      {
+        iid: invoiceId, amount: chargeAmount, status: mapped?.status || 'failed',
+        fee: fee?.amount || null, flab: fee?.label || null,
+        txnId: mapped?.txnId || null, auth: mapped?.auth || null,
+        last4: mapped?.last4 || profile.last4 || null, brand: mapped?.brand || profile.card_brand || null,
+        exp: mapped?.exp || profile.expiry || null, holder: mapped?.holder || cardholderName || null,
+        pmsg: mapped?.pmsg || null, pcode: mapped?.pcode || null, raw: JSON.stringify(chargeJson),
+        rtok: receiptToken, vaultProfileId: vaultProfileId,
+      }
+    );
+    if (!captured) {
+      return res.status(402).json({ error: mapped?.pmsg || 'Your first gift could not be charged. Please try a different card.' });
+    }
+    await refreshInvoiceTotalsById(invoiceId);
+
+    const [donIns] = await db.query(
+      `INSERT INTO donations (contact_id, fund_id, payment_id, invoice_id, source, dedication_note, is_anonymous)
+       VALUES (:contact_id, :fund_id, :payment_id, :invoice_id, :source, :dedication_note, :is_anonymous)`,
+      {
+        contact_id: contactId, fund_id: fund?.id || null, payment_id: pay.insertId, invoice_id: invoiceId,
+        source: body.source === 'sms' ? 'sms' : 'form',
+        dedication_note: body.dedication_note || null, is_anonymous: body.is_anonymous ? 1 : 0,
+      }
+    );
+    await ensureConstituentTag(contactId, 'Donor');
+    await notifyDonationCaptured(contactId, { amount, fundName: fund?.name, isRecurring: true });
+
     const nextRun = addInterval(today, intervalUnit, intervalCount);
     const [sub] = await db.query(
       `INSERT INTO subscriptions

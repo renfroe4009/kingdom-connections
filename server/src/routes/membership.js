@@ -14,6 +14,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { db } = require('../db');
 const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requirePortal } = require('./portal');
 const { ensureConstituentTag, notifyMembershipEvent } = require('../services/constituents');
 const moduleSettings = require('../services/moduleSettings');
 const { membershipTerms } = require('../services/membershipTerms');
@@ -250,6 +251,157 @@ router.post('/public/signup', async (req, res, next) => {
 
     // ---- Create the subscription: monthly renewals, or the one-time year
     // that billing-cron closes out at next_run_date (services/membershipTerms.js) ----
+    const nextRun = await require('../jobs/billing-cron').addInterval(today, terms.intervalUnit, terms.intervalCount);
+    const [sub] = await db.query(
+      `INSERT INTO subscriptions
+         (name, contact_id, currency, interval_unit, interval_count, start_date, next_run_date, end_date,
+          status, auto_charge, gateway, gateway_profile_id, vault_profile_id, membership_tier_id, owner_id)
+       VALUES
+         (:name, :contact_id, 'USD', :interval_unit, :interval_count, :start_date, :next_run_date, :end_date,
+          'active', :auto_charge, 'valor', :gateway_profile_id, :vault_profile_id, :membership_tier_id, NULL)`,
+      {
+        name: memo, contact_id: contactId, interval_unit: terms.intervalUnit, interval_count: terms.intervalCount,
+        start_date: today, next_run_date: nextRun, end_date: terms.endDate, auto_charge: terms.autoCharge,
+        gateway_profile_id: String(vaultProfileId), vault_profile_id: vaultProfileId, membership_tier_id: tier.id,
+      }
+    );
+    await db.query(
+      `INSERT INTO subscription_items (subscription_id, description, quantity, unit_price, sort_order)
+       VALUES (:sid, :desc, 1, :amount, 0)`,
+      { sid: sub.insertId, desc: memo, amount }
+    );
+
+    await ensureConstituentTag(contactId, 'Member');
+    await notifyMembershipEvent('membership.started', contactId, { tierName: tier.name, amount });
+
+    res.status(201).json({ ok: true, subscriptionId: sub.insertId, receipt_token: receiptToken });
+  } catch (err) { next(err); }
+});
+
+// POST /api/membership/public/signup-saved — same pipeline as /public/signup
+// above, but for a logged-in portal user paying with a card they've already
+// saved instead of tokenizing a new one. Portal auth required specifically
+// on this route (everything else here stays public) since a saved card
+// belongs to one contact and must only be charged by that same contact.
+router.post('/public/signup-saved', requireAuth, requirePortal, async (req, res, next) => {
+  try {
+    const {
+      getGateway, valorVaultCharge, mapValorVaultChargeResponse,
+      resolveCardholderName, computeProcessingFee,
+    } = require('../services/gateways');
+    const { refreshInvoiceTotalsById } = require('../routes/invoices');
+
+    if (!req.user.contact_id) return res.status(409).json({ error: 'Your account has no linked member record.' });
+    const contactId = req.user.contact_id;
+
+    const body = req.body || {};
+    const vaultProfileId = Number(body.vault_profile_id);
+    if (!vaultProfileId) return res.status(400).json({ error: 'vault_profile_id is required' });
+
+    const [[profile]] = await db.query(
+      `SELECT * FROM vault_profiles WHERE id = :id AND contact_id = :cid AND deleted_at IS NULL`,
+      { id: vaultProfileId, cid: contactId }
+    );
+    if (!profile) return res.status(404).json({ error: 'Payment method not found' });
+    if (profile.gateway !== 'valor' || !profile.card_token) {
+      return res.status(400).json({ error: 'This payment method cannot be used for membership checkout.' });
+    }
+
+    const [[contact]] = await db.query('SELECT first_name, last_name, email FROM contacts WHERE id = :id', { id: contactId });
+    const donorEmail = contact?.email;
+    if (!donorEmail) return res.status(409).json({ error: 'Your account has no email on file.' });
+
+    const [[tier]] = await db.query(
+      'SELECT * FROM membership_tiers WHERE slug = :slug AND is_active = 1',
+      { slug: body.tier_slug }
+    );
+    if (!tier) return res.status(400).json({ error: 'Unknown or inactive membership tier' });
+    const amount = Number(tier.price);
+
+    const cfg = await getGateway('valor', null);
+    if (!cfg) return res.status(400).json({ error: 'No active Valor gateway configured' });
+
+    const fee = !cfg.b2b_only ? computeProcessingFee({ cfg, baseAmount: amount }) : null;
+    const chargeAmount = Math.round((amount + (fee?.amount || 0)) * 100) / 100;
+
+    const donorFullName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
+    const cardholderName = resolveCardholderName(profile.cardholder_name, donorFullName);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const terms = membershipTerms(body.frequency, today);
+    const memo = `Membership — ${tier.name} (${terms.label})`;
+    const paymentToken = crypto.randomBytes(32).toString('hex');
+    const invCfg = await moduleSettings.get('invoices');
+    const pfx = (invCfg.invoice_prefix || 'INV').trim().toUpperCase();
+    const year = new Date().getUTCFullYear();
+    const [numRows] = await db.query(
+      `SELECT invoice_number FROM invoices WHERE invoice_number LIKE :p ORDER BY id DESC LIMIT 1`,
+      { p: `${pfx}-${year}-%` }
+    );
+    const lastNum = numRows[0]?.invoice_number;
+    const seq = lastNum ? Number(lastNum.split('-').pop()) + 1 : 1;
+    const number = `${pfx}-${year}-${String(seq).padStart(6, '0')}`;
+
+    const [inv] = await db.query(
+      `INSERT INTO invoices
+         (payment_token, invoice_number, contact_id, issue_date, due_date, currency,
+          subtotal, tax_rate, tax_amount, discount_rate, discount_amount, total,
+          amount_paid, balance_due, status, memo)
+       VALUES
+         (:payment_token, :invoice_number, :contact_id, :issue_date, :due_date, 'USD',
+          :subtotal, 0, 0, 0, 0, :total, 0, :total, 'sent', :memo)`,
+      { payment_token: paymentToken, invoice_number: number, contact_id: contactId, issue_date: today, due_date: today, subtotal: amount, total: chargeAmount, memo }
+    );
+    const invoiceId = inv.insertId;
+    await db.query(
+      `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, amount, sort_order)
+       VALUES (:invoice_id, :desc, 1, :amount, :amount, 0)`,
+      { invoice_id: invoiceId, desc: memo, amount }
+    );
+    if (fee?.amount > 0) {
+      await db.query(
+        `INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, amount, sort_order)
+         VALUES (:invoice_id, :desc, 1, :amount, :amount, 1)`,
+        { invoice_id: invoiceId, desc: fee.label, amount: fee.amount }
+      );
+    }
+
+    let chargeJson;
+    try {
+      chargeJson = await valorVaultCharge(cfg, {
+        card_token: profile.card_token, amount: chargeAmount, invoicenumber: number,
+        cardholdername: cardholderName, email: donorEmail, surcharge_amount: fee?.amount || 0,
+      });
+    } catch (chargeErr) {
+      return res.status(402).json({ error: chargeErr.message || 'Card could not be charged' });
+    }
+    const mapped = mapValorVaultChargeResponse(chargeJson);
+    const captured = mapped?.status === 'captured';
+    const receiptToken = crypto.randomBytes(32).toString('hex');
+    await db.query(
+      `INSERT INTO payments
+         (invoice_id, gateway, method, amount, currency, status,
+          fee_amount, fee_label,
+          external_txn_id, external_auth_code, card_last4, card_brand, card_expiry, card_holder_name,
+          processor_message, processor_code, processor_response, received_at, receipt_token, vault_profile_id)
+       VALUES
+         (:iid, 'valor', 'card', :amount, 'USD', :status, :fee, :flab, :txnId, :auth, :last4, :brand, :exp, :holder,
+          :pmsg, :pcode, CAST(:raw AS JSON), NOW(), :rtok, :vaultProfileId)`,
+      {
+        iid: invoiceId, amount: chargeAmount, status: mapped?.status || 'failed',
+        fee: fee?.amount || null, flab: fee?.label || null,
+        txnId: mapped?.txnId || null, auth: mapped?.auth || null,
+        last4: mapped?.last4 || profile.last4 || null, brand: mapped?.brand || profile.card_brand || null,
+        exp: mapped?.exp || profile.expiry || null, holder: mapped?.holder || cardholderName || null,
+        pmsg: mapped?.pmsg || null, pcode: mapped?.pcode || null, raw: JSON.stringify(chargeJson),
+        rtok: receiptToken, vaultProfileId: vaultProfileId,
+      }
+    );
+    if (!captured) {
+      return res.status(402).json({ error: mapped?.pmsg || 'Your card could not be charged. Please try a different card.' });
+    }
+    await refreshInvoiceTotalsById(invoiceId);
+
     const nextRun = await require('../jobs/billing-cron').addInterval(today, terms.intervalUnit, terms.intervalCount);
     const [sub] = await db.query(
       `INSERT INTO subscriptions

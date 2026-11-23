@@ -37,6 +37,58 @@ export default function DonationRecurringCheckout({ donation, onSuccess, onError
   const [achAuthText, setAchAuthText] = useState('');
   const [intentId, setIntentId] = useState(null);
 
+  // If the donor is logged into the portal (lc_token present), offer their
+  // saved cards instead of a blank card form — same pattern as
+  // DonationCheckout.jsx's portal toggle, pointed at the recurring-saved
+  // endpoint.
+  const [portalCards, setPortalCards] = useState([]);
+  const [portalMode, setPortalMode] = useState('new'); // 'new' | 'saved'
+  const [selectedPortalCard, setSelectedPortalCard] = useState(null);
+  const [portalCharging, setPortalCharging] = useState(false);
+  const [portalError, setPortalError] = useState('');
+
+  useEffect(() => {
+    if (!localStorage.getItem('lc_token')) return;
+    let cancelled = false;
+    api.get('/portal/payment-methods')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const profiles = data.profiles || [];
+        setPortalCards(profiles);
+        if (profiles.length) {
+          setPortalMode('saved');
+          setSelectedPortalCard(profiles.find((p) => p.is_default) || profiles[0]);
+        }
+      })
+      .catch(() => {}); // not logged into the portal, or no permission — fall back to card entry
+    return () => { cancelled = true; };
+  }, []);
+
+  async function chargeSavedPortalCard() {
+    if (!selectedPortalCard) return;
+    setPortalCharging(true);
+    setPortalError('');
+    try {
+      const { data } = await api.post('/donations/public/recurring-saved', {
+        amount: donation.amount,
+        fund_slug: donation.fundSlug || null,
+        dedication_note: donation.dedicationNote || null,
+        is_anonymous: !!donation.isAnonymous,
+        interval_unit: donation.intervalUnit || 'month',
+        interval_count: donation.intervalCount || 1,
+        source: donation.source || 'form',
+        vault_profile_id: selectedPortalCard.id,
+      });
+      onSuccess(data);
+    } catch (e) {
+      const m = e.response?.data?.error || 'Could not set up your recurring gift.';
+      setPortalError(m);
+      onError?.(m);
+    } finally {
+      setPortalCharging(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     Promise.all([
@@ -153,8 +205,47 @@ export default function DonationRecurringCheckout({ donation, onSuccess, onError
     );
   }
 
+  const showPortalToggle = portalCards.length > 0;
+
   return (
     <div>
+      {showPortalToggle && (
+        <div className="d-flex gap-2 mb-3">
+          <button type="button" className={`btn btn-sm flex-fill ${portalMode === 'saved' ? 'btn-dark' : 'btn-outline-secondary'}`}
+            onClick={() => setPortalMode('saved')}>
+            Saved card
+          </button>
+          <button type="button" className={`btn btn-sm flex-fill ${portalMode === 'new' ? 'btn-dark' : 'btn-outline-secondary'}`}
+            onClick={() => setPortalMode('new')}>
+            New card
+          </button>
+        </div>
+      )}
+
+      {showPortalToggle && portalMode === 'saved' ? (
+        <div>
+          {portalCards.map((p) => (
+            <label key={p.id} className="d-flex align-items-center gap-2 border rounded px-3 py-2 mb-2" style={{ cursor: 'pointer' }}>
+              <input type="radio" name="recurring_portal_saved_card" checked={selectedPortalCard?.id === p.id} onChange={() => setSelectedPortalCard(p)} />
+              <span className="small">
+                {p.card_brand ? `${p.card_brand.charAt(0).toUpperCase()}${p.card_brand.slice(1)} ` : ''}
+                •••• {p.last4 || '????'}
+                {p.is_default && <span className="text-muted ms-2" style={{ fontSize: '0.75rem' }}>Default</span>}
+              </span>
+            </label>
+          ))}
+          {portalError && <div className="alert alert-danger py-2 small">{portalError}</div>}
+          <button type="button" className="btn btn-primary w-100" disabled={!selectedPortalCard || portalCharging} onClick={chargeSavedPortalCard}>
+            {portalCharging ? <><span className="spinner-border spinner-border-sm me-2"></span>Setting up…</> : 'Give with this card'}
+          </button>
+          <div className="d-flex justify-content-end mt-3">
+            <button className="btn btn-light btn-sm" onClick={onCancel} disabled={portalCharging}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
       {loading && (
         <div className="text-center py-3 text-muted">
           <div className="spinner-border spinner-border-sm me-2"></div>
@@ -205,6 +296,8 @@ export default function DonationRecurringCheckout({ donation, onSuccess, onError
           Cancel
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }
