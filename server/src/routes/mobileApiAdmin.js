@@ -25,7 +25,7 @@ const {
 // anywhere).
 const VALID_SCOPES = ['organizations:read', 'members:read', 'members:write', 'members:delete'];
 const VALID_EVENTS = [
-  'member.created', 'member.updated', 'member.app_data_deleted',
+  'member.created', 'member.updated', 'member.deactivated', 'member.app_data_deleted',
   'course.enrolled', 'course.completed', 'certificate.issued',
 ];
 

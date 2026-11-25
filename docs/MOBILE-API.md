@@ -184,6 +184,7 @@ KC pushes these events to the URL(s) registered for your client:
 |---|---|
 | `member.created` | A new member is added to one of your enabled orgs |
 | `member.updated` | A member's record or app profile changes |
+| `member.deactivated` | A member's portal login is deactivated by staff |
 | `member.app_data_deleted` | A delete-request (§5) completes |
 | `course.enrolled` | A member is granted access to an LMS course (paid signup or staff-added) |
 | `course.completed` | A member finishes every lesson in a course |

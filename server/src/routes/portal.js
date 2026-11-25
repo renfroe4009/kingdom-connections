@@ -17,6 +17,7 @@ const { tagInvoicePaymentAsDonation } = require('../services/constituents');
 const { maybeSendReceiptEmail } = require('../services/receipts');
 const { wontRenewSql } = require('../services/membershipTerms');
 const { passwordSchema, hashPassword, isPasswordBreached, BCRYPT_COST } = require('../services/passwordPolicy');
+const { notifyMemberChange } = require('../services/ppWebhooks');
 
 // Require the user to be in the 'portal' role (in addition to an admin bypass)
 function requirePortal(req, res, next) {
@@ -137,12 +138,17 @@ Password: ${tempPassword}</p>
 
 router.delete('/admin/users/:id', requireAuth, requirePermission('portal.manage'), async (req, res, next) => {
   try {
+    const [[contact]] = await db.query(
+      `SELECT c.* FROM contacts c JOIN users u ON u.contact_id = c.id WHERE u.id = :id`,
+      { id: req.params.id }
+    );
     await db.query(
       `DELETE ur FROM user_roles ur
          JOIN roles r ON r.id = ur.role_id
         WHERE ur.user_id = :id AND r.name = 'portal'`,
       { id: req.params.id });
     await db.query('UPDATE users SET is_active = 0 WHERE id = :id', { id: req.params.id });
+    if (contact) notifyMemberChange('member.deactivated', contact).catch(() => {});
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
